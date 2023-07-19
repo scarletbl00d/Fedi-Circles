@@ -148,6 +148,11 @@ class ApiClient {
      * return {Promise<FediUser[] | null>}
      */
     async getFavs(note) { throw new Error("Not implemented"); }
+
+    /**
+     * @return string
+     */
+    getClientName() { throw new Error("Not implemented"); }
 }
 
 class MastodonApiClient extends ApiClient {
@@ -253,6 +258,10 @@ class MastodonApiClient extends ApiClient {
             name: user["display_name"],
             handle: parseHandle(user["acct"], note.instance)
         }));
+    }
+
+    getClientName() {
+        return "mastodon";
     }
 }
 
@@ -391,6 +400,10 @@ class MisskeyApiClient extends ApiClient {
             handle: parseHandle(reaction["user"]["username"], reaction["user"]["host"])
         }));
     }
+
+    getClientName() {
+        return "misskey";
+    }
 }
 
 /** @type Map<string, ApiClient> */
@@ -420,20 +433,51 @@ function parseHandle(fediHandle, fallbackInstance = "") {
  */
 
 async function circleMain() {
-    document.getElementById("btn_create").style.display = "none";
-
-    let fediHandle = document.getElementById("txt_mastodon_handle").value;
-
-    const selfUser = parseHandle(fediHandle);
-    const client = await ApiClient.getClient(selfUser.instance);
-
     let progress = document.getElementById("outInfo");
+
+    const generateBtn = document.getElementById("generateButton");
+
+    generateBtn.style.display = "none";
+
+    let fediHandle = document.getElementById("txt_mastodon_handle");
+    const selfUser = parseHandle(fediHandle.value);
+
+    let form = document.getElementById("generateForm");
+    let backend = form.backend;
+    for (const radio of backend) {
+        radio.disabled = true;
+    }
+
+    fediHandle.disabled = true;
+
+    let client;
+    switch (backend.value) {
+        case "mastodon":
+            client = new MastodonApiClient(selfUser.instance);
+            break;
+        case "misskey":
+            client = new MisskeyApiClient(selfUser.instance);
+            break;
+        default:
+            progress.innerText = "Detecting instance...";
+            client = await ApiClient.getClient(selfUser.instance);
+            backend.value = client.getClientName();
+            break;
+    }
+
     progress.innerText = "Fetching your user...";
 
     const user = await client.getUserIdFromHandle(selfUser);
 
     if (!user) {
         alert("Something went horribly wrong, couldn't fetch your user.");
+        fediHandle.disabled = false;
+        for (const radio of backend) {
+            radio.disabled = false;
+        }
+        generateBtn.style.display = "inline";
+        progress.innerText = "";
+
         return;
     }
 
