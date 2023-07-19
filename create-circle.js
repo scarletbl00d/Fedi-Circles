@@ -99,7 +99,11 @@ class ApiClient {
         let { software } = apiResponse;
         software.name = software.name.toLowerCase();
 
-        if (software.name.includes("misskey") || software.name.includes("calckey") || software.name.includes("foundkey") || software.name.includes("magnetar")) {
+        if (software.name.includes("misskey") ||
+            software.name.includes("calckey") ||
+            software.name.includes("foundkey") ||
+            software.name.includes("magnetar") ||
+            software.name.includes("firefish")) {
             const client = new MisskeyApiClient(instance);
             instanceTypeCache.set(instance, client);
             return client;
