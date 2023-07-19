@@ -1,4 +1,4 @@
 # Mastodon-Circles
 Producing a visual representation of Mastodon interactions with JS
 
-README follows...
+A fork of <https://github.com/andigandhi/Mastodon-Circles>

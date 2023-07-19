@@ -2,7 +2,7 @@
 <!DOCTYPE html>
 <html lang="de">
 <meta charset="UTF-8">
-<title>Trötpty - Mastodon Circle Creator</title>
+<title>Fedi Circle Creator</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="stylesheet" href="style.css">
 <style>
@@ -17,7 +17,8 @@
     <input id="txt_mastodon_handle" type="text" onchange="document.getElementById('btn_create').style = 'display: inline;'; document.getElementById('btn_download').style = 'display: none;'" placeholder="@sonnenbrandi@mieke.club">
     <br><br>
     <!-- Buttons -->
-    <button id="btn_create" onClick="circle_main()">Circle Erstellen</button>
+    <button id="btn_create" onclick="(async () => await circleMain())()">Generate circle</button>
+    <span id="outInfo"></span>
     <a href="" id="btn_download" class="button" download="mastodon-circle.png" style="display: none;">DOWNLOAD (klappt wsl nicht)</a>
     <!-- <button id="btn_download" onClick="downloadImage()" style="display: none;">DOWNLOAD</button> -->
     <br><br>
@@ -32,8 +33,9 @@
     </div>
     <br><br><br>
     <div id="credits" style="width: 100%;">
+        <p>Contribute on <a href="https://github.com/AMNatty/Mastodon-Circles">Github</a> </p>
         <p>Thanks to <a href="https://twitter.com/duiker101">Duiker101</a> for creating chirpty for Twitter</p>
-        <p>Contribute on <a href="https://github.com/andigandhi/Mastodon-Circles">Github</a> </p>
+        <p>Original on <a href="https://github.com/andigandhi/Mastodon-Circles">Github</a> </p>
     </div>
     <!-- output for further projects ;) -->
     <div id="outDiv" style="display: none;"></div>

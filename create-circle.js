@@ -1,194 +1,577 @@
-/*
-Dies ist eine erste Implementierung, da ist noch vieeeel zu tun :)
-*/
+/**
+ *
+ * @param {RequestInfo | URL} url
+ * @param {{ body?: any } & RequestInit?} options
+ */
+async function apiRequest(url, options = null)
+{
+    console.log(`Fetching :: ${url}`);
 
-let ownProfilePic;
-let userInfo;
-let connection_list = {};
-let requestCounter = 1;
-// Request Limit
-let request_limit;
+    if (options && options.body) {
+        options.body = JSON.stringify(options.body);
+    }
 
-// The main function called by the button-click
-function circle_main() {
-    // Make Button invisible to prevent clicking
+    return await fetch(url, options ?? {})
+        .then(response => response.json())
+        .catch(error => {
+            console.error(`Error fetching ${url}: ${error}`);
+            return null;
+        });
+}
+
+/**
+ * @typedef {{
+ *     name: string,
+ *     instance: string,
+ * }} Handle
+ */
+
+/**
+ * @typedef {{
+ *    id: string,
+ *    avatar: string,
+ *    bot: boolean,
+ *    name: string,
+ *    handle: Handle,
+ * }} FediUser
+ */
+
+/**
+ * @typedef {{
+ *    id: string,
+ *    replies: number,
+ *    renotes: number,
+ *    favorites: number,
+ *    instance: string,
+ *    author?: FediUser,
+ * }} Note
+ */
+
+class ApiClient {
+    /**
+     * @param {string} instance
+     */
+    constructor(instance) {
+        this._instance = instance;
+    }
+
+    /**
+     *
+     * @param instance
+     * @returns {Promise<ApiClient>}
+     */
+    static async getClient(instance) {
+        if (instanceTypeCache.has(instance)) {
+            return instanceTypeCache.get(instance);
+        }
+
+        let url = "https://" + instance + "/.well-known/nodeinfo";
+        let nodeInfo = await apiRequest(url);
+
+        if (!nodeInfo || !Array.isArray(nodeInfo.links)) {
+            const client = new MastodonApiClient(instance);
+            instanceTypeCache.set(instance, client);
+            return client;
+        }
+
+        const { links } = nodeInfo;
+
+        let apiLink = links.find(link => link.rel === "http://nodeinfo.diaspora.software/ns/schema/2.1");
+        if (!apiLink) {
+            apiLink = links.find(link => link.rel === "http://nodeinfo.diaspora.software/ns/schema/2.0");
+        }
+
+        if (!apiLink) {
+            console.error(`No NodeInfo API found for ${instance}}`);
+            const client = new MastodonApiClient(instance);
+            instanceTypeCache.set(instance, client);
+            return client;
+        }
+
+        let apiResponse = await apiRequest(apiLink.href);
+
+        if (!apiResponse) {
+            const client = new MastodonApiClient(instance);
+            instanceTypeCache.set(instance, client);
+            return client;
+        }
+
+        let { software } = apiResponse;
+        software.name = software.name.toLowerCase();
+
+        if (software.name.includes("misskey") || software.name.includes("calckey") || software.name.includes("foundkey") || software.name.includes("magnetar")) {
+            const client = new MisskeyApiClient(instance);
+            instanceTypeCache.set(instance, client);
+            return client;
+        }
+
+        const client = new MastodonApiClient(instance);
+        instanceTypeCache.set(instance, client);
+        return client;
+    }
+
+    /**
+     * @param {Handle} handle
+     *
+     * @return {Promise<FediUser>}
+     */
+    async getUserIdFromHandle(handle){ throw new Error("Not implemented"); }
+
+    /**
+     * @param {FediUser} user
+     *
+     * return {Promise<Note[]>}
+     */
+    async getNotes(user){ throw new Error("Not implemented"); }
+
+    /**
+     * @param {Note} note
+     *
+     * return {Promise<FediUser[] | null>}
+     */
+    async getRenotes(note){ throw new Error("Not implemented"); }
+
+    /**
+     * @param {Note} note
+     *
+     * return {Promise<Note[] | null>}
+     */
+    async getReplies(note){ throw new Error("Not implemented"); }
+
+    /**
+     * @param {Note} note
+     *
+     * return {Promise<FediUser[] | null>}
+     */
+    async getFavs(note) { throw new Error("Not implemented"); }
+}
+
+class MastodonApiClient extends ApiClient {
+    /**
+     * @param {string} instance
+     */
+    constructor(instance) {
+        super(instance);
+    }
+
+    async getUserIdFromHandle(handle) {
+        const url = `https://${this._instance}/api/v1/accounts/lookup?acct=${handle.name}@${handle.instance}`;
+        const response = await apiRequest(url, null);
+
+        if (!response) {
+            return null;
+        }
+
+        return {
+            id: response.id,
+            avatar: response.avatar,
+            bot: response.bot,
+            name: response["display_name"],
+            handle: handle,
+        };
+    }
+
+    async getNotes(user) {
+        const url = `https://${this._instance}/api/v1/accounts/${user.id}/statuses?exclude_replies=true&exclude_reblogs=true&limit=40`;
+        const response = await apiRequest(url, null);
+
+        if (!response) {
+            return null;
+        }
+
+        return response.map(note => ({
+            id: note.id,
+            replies: note["replies_count"] || 0,
+            renotes: note["reblogs_count"] || 0,
+            favorites: note["favourites_count"],
+            instance: this._instance,
+            author: user
+        }));
+    }
+
+    async getRenotes(note) {
+        const url = `https://${this._instance}/api/v1/statuses/${note.id}/reblogged_by`;
+        const response = await apiRequest(url);
+
+        if (!response) {
+            return null;
+        }
+
+        return response.map(user => ({
+            id: user.id,
+            avatar: user.avatar,
+            bot: user.bot,
+            name: user["display_name"],
+            handle: parseHandle(user["acct"], note.instance)
+        }));
+    }
+
+    async getReplies(noteIn) {
+        const url = `https://${this._instance}/api/v1/statuses/${noteIn.id}/context`;
+        const response = await apiRequest(url);
+
+        if (!response) {
+            return null;
+        }
+
+        return response["ancestors"].map(note => {
+            let handle = parseHandle(note["account"]["acct"], noteIn.instance);
+
+            return {
+                id: note.id,
+                replies: note["replies_count"] || 0,
+                renotes: note["reblogs_count"] || 0,
+                favorites: note["favourites_count"],
+                instance: handle.instance,
+                author: {
+                    id: note["account"]["id"],
+                    bot: note["account"]["bot"],
+                    name: note["account"]["display_name"],
+                    avatar: note["account"]["avatar"],
+                    handle: handle
+                }
+            };
+        });
+    }
+
+    async getFavs(note) {
+        const url = `https://${this._instance}/api/v1/statuses/${note.id}/favourited_by`;
+        const response = await apiRequest(url);
+
+        if (!response) {
+            return null;
+        }
+
+        return response.map(user => ({
+            id: user.id,
+            avatar: user.avatar,
+            bot: user.bot,
+            name: user["display_name"],
+            handle: parseHandle(user["acct"], note.instance)
+        }));
+    }
+}
+
+class MisskeyApiClient extends ApiClient {
+    /**
+     * @param {string} instance
+     */
+    constructor(instance) {
+        super(instance);
+    }
+
+    async getUserIdFromHandle(handle) {
+        const url = `https://${this._instance}/api/users/show`;
+        const response = await apiRequest(url, {
+            method: "POST",
+            body: {
+                username: handle.name
+            }
+        });
+
+        if (!response) {
+            return null;
+        }
+
+        return {
+            id: response.id,
+            avatar: response["avatarUrl"],
+            bot: response["isBot"],
+            name: response["name"],
+            handle: handle,
+        };
+    }
+
+    async getNotes(user) {
+        const url = `https://${this._instance}/api/users/notes`;
+        const response = await apiRequest(url, {
+            method: "POST",
+            body: {
+                userId: user.id,
+                limit: 70,
+                reply: false,
+                renote: false,
+            }
+        });
+
+        if (!response) {
+            return null;
+        }
+
+        return response.map(note => ({
+            id: note.id,
+            replies: note["repliesCount"],
+            renotes: note["renoteCount"],
+            favorites: Object.values(note["reactions"]).reduce((a, b) => a + b, 0),
+            instance: this._instance,
+            author: user
+        }));
+    }
+
+    async getRenotes(note) {
+        const url = `https://${this._instance}/api/notes/renotes`;
+        const response = await apiRequest(url, {
+            method: "POST",
+            body: {
+                noteId: note.id,
+                limit: 50,
+            }
+        });
+
+        if (!response) {
+            return null;
+        }
+
+        return response.map(renote => ({
+            id: renote["user"]["id"],
+            avatar: renote["user"]["avatarUrl"],
+            bot: renote["user"]["isBot"] || false,
+            name: renote["user"]["name"],
+            handle: parseHandle(renote["user"]["username"], renote["user"]["host"])
+        }));
+    }
+
+    async getReplies(note) {
+        const url = `https://${this._instance}/api/notes/replies`;
+        const response = await apiRequest(url, {
+            method: "POST",
+            body: {
+                noteId: note.id,
+                limit: 100,
+            }
+        });
+
+        if (!response) {
+            return null;
+        }
+
+        return response.map(reply => {
+            const handle = parseHandle(reply["user"]["username"], reply["user"]["host"]);
+
+            return {
+                id: reply.id,
+                replies: reply["repliesCount"],
+                renotes: reply["renoteCount"],
+                favorites: Object.values(reply["reactions"]).reduce((a, b) => a + b, 0),
+                instance: handle.instance,
+                author: {
+                    id: reply["user"]["id"],
+                    avatar: reply["user"]["avatarUrl"],
+                    bot: reply["user"]["isBot"] || false,
+                    name: reply["user"]["name"],
+                    handle: handle
+                }
+            };
+        });
+    }
+
+    async getFavs(note) {
+        const url = `https://${this._instance}/api/notes/reactions`;
+        const response = await apiRequest(url, {
+            method: "POST",
+            body: {
+                noteId: note.id,
+                limit: 100,
+            }
+        });
+
+        if (!response) {
+            return null;
+        }
+
+        return response.map(reaction => ({
+            id: reaction["user"]["id"],
+            avatar: reaction["user"]["avatarUrl"],
+            bot: reaction["user"]["isBot"] || false,
+            name: reaction["user"]["name"],
+            handle: parseHandle(reaction["user"]["username"], reaction["user"]["host"])
+        }));
+    }
+}
+
+/** @type Map<string, ApiClient> */
+let instanceTypeCache = new Map();
+
+/**
+ * @param {string} fediHandle
+ * @param {string} fallbackInstance
+ *
+ * @returns {Handle}
+ */
+function parseHandle(fediHandle, fallbackInstance = "") {
+    if (fediHandle.charAt(0) === '@')
+        fediHandle = fediHandle.substring(1);
+
+    fediHandle = fediHandle.replaceAll(" ", "");
+    const [name, instance] = fediHandle.split("@", 2);
+
+    return {
+        name: name,
+        instance: instance || fallbackInstance,
+    };
+}
+
+/**
+ * @typedef {FediUser & {conStrength: number}} RatedUser
+ */
+
+async function circleMain() {
     document.getElementById("btn_create").style.display = "none";
-    // Reset all global variables
-    [ownProfilePic, userInfo, connection_list, requestCounter, request_limit] = [null, null, {}, 1, 50];
-    // Get handle from Textfield
-    let mastodon_handle = document.getElementById("txt_mastodon_handle").value;
-    userInfo = formatedUserHandle(mastodon_handle);
-    // Do all the Magic for creating circle
-    getStatuses();
-}
 
-// Format the Mastodon Handle to an array: [username, userID, instance.tld]
-function formatedUserHandle(mastodon_handle) {
-    // Remove leading @
-    if (mastodon_handle.charAt(0) === '@') mastodon_handle = mastodon_handle.substr(1);
-    // Remove Spaces
-    mastodon_handle = mastodon_handle.replaceAll(" ","");
-    // Split handle into name and instance
-    mastodon_handle = mastodon_handle.split("@");
-    // Return the array (fetch user ID with getIdFromName)
-    return [mastodon_handle[0], getIdFromName(mastodon_handle[0], mastodon_handle[1]), mastodon_handle[1]];
-}
+    let fediHandle = document.getElementById("txt_mastodon_handle").value;
 
-// Get the user ID from the handle (synchronous request! :( )
-function getIdFromName(name, server) {
-    var xmlHttp = new XMLHttpRequest();
-    let url = "https://"+server+"/api/v1/accounts/lookup?acct="+name;
-    xmlHttp.open( "GET", url, false );
-    xmlHttp.send( null );
-    let response = JSON.parse(xmlHttp.responseText);
-    ownProfilePic = response["avatar"];
-    return response["id"];
-}
+    const selfUser = parseHandle(fediHandle);
+    const client = await ApiClient.getClient(selfUser.instance);
 
-// Get a JSON String with all the posted statuses from the account and call processStatuses()
-async function getStatuses(startID=null) {
-    // Build the URL
-    let url = "https://"+userInfo[2]+"/api/v1/accounts/"+userInfo[1]+"/statuses?exclude_replies=true&exclude_reblogs=true&limit=40";
-    //if (startID) url = url+"&max_id="+startID
-    // Do the async http request and call processStatuses()
-    httpRequest(url, processStatuses);
-}
+    let progress = document.getElementById("outInfo");
+    progress.innerText = "Fetching your user...";
 
-// Process the JSON String into an array
-function processStatuses(statuses) {
-    jsonStat = JSON.parse(statuses);
+    const user = await client.getUserIdFromHandle(selfUser);
 
-    for (var i=0; i<jsonStat.length; i++) {
-        evaluateStatus(jsonStat[i]["id"], (jsonStat[i]["favourites_count"]>0), (jsonStat[i]["reblogs_count"]>0));
-        request_limit--;
-        if (request_limit<0) return;
+    if (!user) {
+        alert("Something went horribly wrong, couldn't fetch your user.");
+        return;
     }
 
-    // Do another API request to fetch older Posts?
-}
+    progress.innerText = "Fetching your latest posts...";
 
-// Get all Reblogs and Favs for a status update
-function evaluateStatus(id, faved, rebloged) {
-    requestCounter += faved+rebloged+1;
-    // Build the URL
-    let url1 = "https://"+userInfo[2]+"/api/v1/statuses/"+id+"/reblogged_by";
-    // Do the async http request
-    if (rebloged) httpRequest(url1, evalStatusInteractions, 1.3);
+    const notes = await client.getNotes(user);
 
-    // Build the URL
-    let url2 = "https://"+userInfo[2]+"/api/v1/statuses/"+id+"/context";
-    // Do the async http request
-    httpRequest(url2, evalReplies, 1.1);
-
-    // Build the URL
-    let url3 = "https://"+userInfo[2]+"/api/v1/statuses/"+id+"/favourited_by";
-    // Do the async http request
-    if (faved) httpRequest(url3, evalStatusInteractions, 1.0);
-}
-
-// Evaluate the direct replies to tweets (no trees yet :( )
-function evalReplies(jsonString, plus) {
-    let jsonArray = JSON.parse(jsonString)["descendants"];
-
-    for (var i=0; i<jsonArray.length; i++) {
-        incConnectionValue(jsonArray[i]["account"], plus);
+    if (!notes) {
+        alert("Something went horribly wrong, couldn't fetch your notes.");
+        return;
     }
 
-    if (requestCounter<=0) showConnections();
+    /**
+     * @type {Map<string, RatedUser>}
+     */
+    let connectionList = new Map();
+    await processNotes(client, connectionList, notes);
+
+    showConnections(user, connectionList);
 }
 
-// Evaluate the Favs and Reposts
-function evalStatusInteractions(jsonString, plus) {
-    let jsonArray = JSON.parse(jsonString);
-    
-    for (var i=0; i<jsonArray.length; i++) {
-        incConnectionValue(jsonArray[i], plus);
+/**
+ * @param {ApiClient} client
+ * @param {Map<string, RatedUser>} connectionList
+ * @param {Note[]} notes
+ */
+async function processNotes(client, connectionList, notes) {
+    let progress = document.getElementById("outInfo");
+    let counter = 0;
+    let total = notes.length;
+
+    for (const note of notes) {
+        progress.innerText = `Processing :3 (${counter}/${total}) `;
+        await evaluateNote(client, connectionList, note);
+        counter++;
     }
 
-    if (requestCounter<=0) showConnections();
+    progress.innerText = "Done :3";
 }
 
+/**
+@param {ApiClient} client
+ * @param {Map<string, RatedUser>} connectionList
+ * @param {Note} note
+ */
+async function evaluateNote(client, connectionList, note) {
+    if (note.favorites > 0) {
+        await client.getFavs(note).then(users => {
+            if (!users)
+                return;
 
-// increment the relationship value by the integer "plus" (3 for reblogs, 1 for likes)
-function incConnectionValue(conJSON, plus) {
-    let id = conJSON["id"];
-    // Test if a connection was already discovered
-    if (!(id in connection_list)) {
-        // NO? call addNewConnection and create the connection!
-        addNewConnection(conJSON)
+            users.forEach(user => {
+                incConnectionValue(connectionList, user, 1.0);
+            });
+        }).catch(() => {});
     }
-    // Increment the connection strength
-    connection_list[id]["conStrength"] = connection_list[id]["conStrength"] + plus;
+
+    if (note.renotes > 0) {
+        await client.getRenotes(note).then(users => {
+            if (!users)
+                return;
+
+            users.forEach(user => {
+                incConnectionValue(connectionList, user, 1.3);
+            });
+        }).catch(() => {});
+    }
+
+    await client.getReplies(note).then(replies => {
+        if (!replies)
+            return [];
+
+        replies.forEach(reply => {
+            incConnectionValue(connectionList, reply.author, 1.1);
+        });
+
+        return replies;
+    }).catch(() => {});
 }
 
-// Create a new node in the connection_list dictionary
-function addNewConnection(jsonArray) {
-    connection_list[jsonArray["id"]] = {};
-    connection_list[jsonArray["id"]]["conStrength"] = 0;
-    connection_list[jsonArray["id"]]["acct"] = jsonArray["acct"];
-    connection_list[jsonArray["id"]]["pic"] = jsonArray["avatar"];
-    connection_list[jsonArray["id"]]["name"] = jsonArray["display_name"]
-    connection_list[jsonArray["id"]]["bot"] = jsonArray["bot"];
+/**
+ * @param {Map<string, RatedUser>} connectionList
+ * @param {FediUser} user
+ * @param {number} plus
+ */
+function incConnectionValue(connectionList, user, plus) {
+    if (user.bot)
+        return;
+
+    if (!connectionList.has(user.id)) {
+        connectionList.set(user.id, {
+            conStrength: 0,
+            ...user
+        });
+    }
+
+    connectionList.get(user.id).conStrength += plus;
 }
 
-
-
-function showConnections() {
-    // Remove own User from Dict
-    if (userInfo[1] in connection_list) delete connection_list[userInfo[1]];
+/**
+ * @param {FediUser} localUser
+ * @param {Map<string, RatedUser>} connectionList
+ */
+function showConnections(localUser, connectionList) {
+    if (connectionList.has(localUser.id))
+        connectionList.delete(localUser.id);
 
     // Sort dict into Array items
-    var items = Object.keys(connection_list).map(
-        (key) => { return [key, connection_list[key]] });
-    items.sort(
-        (first, second) => { return second[1]["conStrength"] - first[1]["conStrength"] }
-    );
-    
+    const items = [...connectionList.values()].sort((first, second) => second.conStrength - first.conStrength);
+
+    console.log(items);
+
     // Also export the Username List
-    let userDataExport = {};
-    let usersDivs = [document.getElementById("ud1"), document.getElementById("ud2"), document.getElementById("ud3")];
-    // Clear all content of divs
-    for (var i=0; i<3; i++) usersDivs[i].innerHTML="";
+    let usersDivs = [
+        document.getElementById("ud1"),
+        document.getElementById("ud2"),
+        document.getElementById("ud3")
+    ];
+
+    usersDivs.forEach((div) => div.innerHTML = "")
     
-    for (var i=0; i<items.length; i++) {
-        // Create a new html Element
+    for (let i=0; i < items.length; i++) {
         let newUser = document.createElement("p");
-        newUser.innerText = items[i][1]["acct"];
-        
-        // Determine the column for the data
+        newUser.innerText = "@" + items[i].handle.name + "@" + items[i].handle.instance;
+
+        createUserObj(items[i]);
+
         let udNum = 0;
         if (i > numb[0]) udNum = 1;
-        if (i > numb[0]+numb[1]) udNum = 2;
+        if (i > numb[0] + numb[1]) udNum = 2;
         usersDivs[udNum].appendChild(newUser);
-
-        // Belongs to the hidden Export - Maybe for further Projects
-        // userDataExport[items[i][0]] = items[i][1]["conStrength"].toFixed(1);
     }
-    //document.getElementById("outDiv").innerText = JSON.stringify(userDataExport);
 
-    render(items);
+    render(items, localUser);
 }
 
+/**
+ * @param {FediUser} usr
+ */
 function createUserObj(usr) {
     let usrElement = document.createElement("div");
-    usrElement.innerHTML = "<img src=\""+usr["pic"]+"\" width=\"20px\">&nbsp;&nbsp;&nbsp;<b>"+usr["name"]+"</b>&nbsp;&nbsp;"+usr["acct"];
+    usrElement.innerHTML = `<img src="${usr.avatar}" width="20px">&nbsp;&nbsp;&nbsp;<b>${usr.name}</b>&nbsp;&nbsp;`;
     document.getElementById("outDiv").appendChild(usrElement);
 }
 
-
-// Function for the http request
-function httpRequest(url, callback, callbackVal=null)
-{
-    var xmlHttp = new XMLHttpRequest();
-    xmlHttp.onreadystatechange = function() { 
-        if (xmlHttp.readyState == 4) {
-            requestCounter--;
-            if (xmlHttp.status == 200) {
-                callback(xmlHttp.responseText, callbackVal);
-            } else
-                callback("[]", callbackVal);
-        }
-    }
-    xmlHttp.open("GET", url, true);
-    xmlHttp.send(null);
-}
