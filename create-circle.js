@@ -223,7 +223,7 @@ class MastodonApiClient extends ApiClient {
             return null;
         }
 
-        return response["ancestors"].map(note => {
+        return response["descendants"].map(note => {
             let handle = parseHandle(note["account"]["acct"], noteIn.instance);
 
             return {
