@@ -66,7 +66,7 @@ class ApiClient {
             return instanceTypeCache.get(instance);
         }
 
-        let url = "https://" + instance + "/.well-known/nodeinfo";
+        let url = `https://${instance}/.well-known/nodeinfo`;
         let nodeInfo = await apiRequest(url);
 
         if (!nodeInfo || !Array.isArray(nodeInfo.links)) {
@@ -92,6 +92,21 @@ class ApiClient {
         let apiResponse = await apiRequest(apiLink.href);
 
         if (!apiResponse) {
+            // Guess from API endpoints
+            const misskeyMeta = await apiRequest(`https://${instance}/api/meta`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: {}
+            });
+
+            if (misskeyMeta) {
+                const client = new MisskeyApiClient(instance);
+                instanceTypeCache.set(instance, client);
+                return client;
+            }
+
             const client = new MastodonApiClient(instance);
             instanceTypeCache.set(instance, client);
             return client;
@@ -343,10 +358,35 @@ class MisskeyApiClient extends ApiClient {
     }
 
     async getUserIdFromHandle(handle) {
+        const lookupUrl = `https://${this._instance}/api/users/search-by-username-and-host`;
+        const lookup = await apiRequest(lookupUrl, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: {
+                username: handle.name,
+                host: null
+            }
+        });
+
+        let id = null;
+
+        for (const user of lookup) {
+            if (user["host"] === handle.instance && user["username"] === handle.name) {
+                id = user["id"];
+                break;
+            }
+        }
+
         const url = `https://${this._instance}/api/users/show`;
         const response = await apiRequest(url, {
             method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
             body: {
+                id: id ? id : undefined,
                 username: handle.name
             }
         });
@@ -368,6 +408,9 @@ class MisskeyApiClient extends ApiClient {
         const url = `https://${this._instance}/api/users/notes`;
         const response = await apiRequest(url, {
             method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
             body: {
                 userId: user.id,
                 limit: 70,
@@ -395,6 +438,9 @@ class MisskeyApiClient extends ApiClient {
         const url = `https://${this._instance}/api/notes/renotes`;
         const response = await apiRequest(url, {
             method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
             body: {
                 noteId: note.id,
                 limit: 50,
@@ -418,6 +464,9 @@ class MisskeyApiClient extends ApiClient {
         const url = `https://${this._instance}/api/notes/replies`;
         const response = await apiRequest(url, {
             method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
             body: {
                 noteId: note.id,
                 limit: 100,
@@ -453,6 +502,9 @@ class MisskeyApiClient extends ApiClient {
         const url = `https://${this._instance}/api/notes/reactions`;
         const response = await apiRequest(url, {
             method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
             body: {
                 noteId: note.id,
                 limit: 100,
