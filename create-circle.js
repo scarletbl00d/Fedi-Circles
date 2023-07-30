@@ -372,7 +372,7 @@ class MisskeyApiClient extends ApiClient {
 
         let id = null;
 
-        for (const user of lookup) {
+        for (const user of Array.isArray(lookup) ? lookup : []) {
             if (user["host"] === handle.instance && user["username"] === handle.name) {
                 id = user["id"];
                 break;
