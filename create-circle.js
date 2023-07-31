@@ -373,7 +373,8 @@ class MisskeyApiClient extends ApiClient {
         let id = null;
 
         for (const user of Array.isArray(lookup) ? lookup : []) {
-            if (user["host"] === handle.instance && user["username"] === handle.name) {
+            if ((user["host"] === handle.instance || this._instance === handle.instance && user["host"] === null)
+                && user["username"] === handle.name) {
                 id = user["id"];
                 break;
             }
@@ -456,7 +457,7 @@ class MisskeyApiClient extends ApiClient {
             avatar: renote["user"]["avatarUrl"],
             bot: renote["user"]["isBot"] || false,
             name: renote["user"]["name"],
-            handle: parseHandle(renote["user"]["username"], renote["user"]["host"])
+            handle: parseHandle(renote["user"]["username"], renote["user"]["host"] ?? this._instance)
         }));
     }
 
@@ -478,7 +479,7 @@ class MisskeyApiClient extends ApiClient {
         }
 
         return response.map(reply => {
-            const handle = parseHandle(reply["user"]["username"], reply["user"]["host"]);
+            const handle = parseHandle(reply["user"]["username"], reply["user"]["host"] ?? this._instance);
 
             return {
                 id: reply.id,
@@ -520,7 +521,7 @@ class MisskeyApiClient extends ApiClient {
             avatar: reaction["user"]["avatarUrl"],
             bot: reaction["user"]["isBot"] || false,
             name: reaction["user"]["name"],
-            handle: parseHandle(reaction["user"]["username"], reaction["user"]["host"])
+            handle: parseHandle(reaction["user"]["username"], reaction["user"]["host"] ?? this._instance),
         }));
     }
 
