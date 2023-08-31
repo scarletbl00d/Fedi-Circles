@@ -19,12 +19,16 @@ async function apiRequest(url, options = null)
         });
 }
 
-/**
- * @typedef {{
- *     name: string,
- *     instance: string,
- * }} Handle
- */
+function Handle(name, instance) {
+    let handle = Object.create(Handle.prototype);
+    handle.name = name;
+    handle.instance = instance;
+    return handle;
+}
+
+Handle.prototype.toString = function() {
+    return `${this.name}@${this.instance}`;
+}
 
 /**
  * @typedef {{
@@ -34,6 +38,10 @@ async function apiRequest(url, options = null)
  *    name: string,
  *    handle: Handle,
  * }} FediUser
+ */
+
+/**
+ * @typedef {FediUser & {conStrength: number}} RatedUser
  */
 
 /**
@@ -530,7 +538,7 @@ class MisskeyApiClient extends ApiClient {
     }
 }
 
-/** @type Map<string, ApiClient> */
+/** @type {Map<string, ApiClient>} */
 let instanceTypeCache = new Map();
 
 /**
@@ -546,15 +554,8 @@ function parseHandle(fediHandle, fallbackInstance = "") {
     fediHandle = fediHandle.replaceAll(" ", "");
     const [name, instance] = fediHandle.split("@", 2);
 
-    return {
-        name: name,
-        instance: instance || fallbackInstance,
-    };
+    return new Handle(name, instance || fallbackInstance);
 }
-
-/**
- * @typedef {FediUser & {conStrength: number}} RatedUser
- */
 
 async function circleMain() {
     let progress = document.getElementById("outInfo");
@@ -641,8 +642,6 @@ async function processNotes(client, connectionList, notes) {
         await evaluateNote(client, connectionList, note);
         counter++;
     }
-
-    progress.innerText = "Done :3";
 }
 
 /**
@@ -715,8 +714,6 @@ function showConnections(localUser, connectionList) {
     // Sort dict into Array items
     const items = [...connectionList.values()].sort((first, second) => second.conStrength - first.conStrength);
 
-    console.log(items);
-
     // Also export the Username List
     let usersDivs = [
         document.getElementById("ud1"),
@@ -726,9 +723,9 @@ function showConnections(localUser, connectionList) {
 
     usersDivs.forEach((div) => div.innerHTML = "")
     
-    for (let i=0; i < items.length; i++) {
+    for (let i= 0; i < items.length; i++) {
         let newUser = document.createElement("p");
-        newUser.innerText = "@" + items[i].handle.name + "@" + items[i].handle.instance;
+        newUser.innerText = "@" + items[i].handle;
 
         createUserObj(items[i]);
 
