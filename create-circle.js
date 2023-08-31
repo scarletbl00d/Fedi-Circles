@@ -21,6 +21,7 @@ async function apiRequest(url, options = null)
 
 /**
  * @typedef {{
+ *     handle: string,
  *     name: string,
  *     instance: string,
  * }} Handle
@@ -189,7 +190,7 @@ class MastodonApiClient extends ApiClient {
     }
 
     async getUserIdFromHandle(handle) {
-        const url = `https://${this._instance}/api/v1/accounts/lookup?acct=${handle.name}@${handle.instance}`;
+        const url = `https://${this._instance}/api/v1/accounts/lookup?acct=${handle.handle}`;
         const response = await apiRequest(url, null);
 
         if (!response) {
@@ -547,9 +548,23 @@ function parseHandle(fediHandle, fallbackInstance = "") {
     const [name, instance] = fediHandle.split("@", 2);
 
     return {
+        handle: fediHandle,
         name: name,
         instance: instance || fallbackInstance,
     };
+}
+
+/**
+ * @typedef @param {Handle} handle
+ * @returns {Promise<string>} instance
+ */
+async function getDelegateInstance(handle) {
+    // We're checking webfinger to see which URL is for the user,
+    // since that may be on a different domain than the webfinger request
+    const response = await apiRequest(`https://${handle.instance}/.well-known/webfinger?resource=acct:${handle.handle}`)
+    const selfLink = response.links.find(link => link.rel == 'self')
+    const url = new URL(selfLink.href)
+    return url.hostname;
 }
 
 /**
@@ -565,6 +580,8 @@ async function circleMain() {
 
     let fediHandle = document.getElementById("txt_mastodon_handle");
     const selfUser = parseHandle(fediHandle.value);
+
+    selfUser.instance = await getDelegateInstance(selfUser)
 
     let form = document.getElementById("generateForm");
     let backend = form.backend;
