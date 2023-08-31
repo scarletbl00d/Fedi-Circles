@@ -556,15 +556,19 @@ function parseHandle(fediHandle, fallbackInstance = "") {
 
 /**
  * @typedef @param {Handle} handle
- * @returns {Promise<string>} instance
+ * @returns {Promise<Handle>}
  */
-async function getDelegateInstance(handle) {
+async function getDelegatedHandle(handle) {
     // We're checking webfinger to see which URL is for the user,
     // since that may be on a different domain than the webfinger request
     const response = await apiRequest(`https://${handle.instance}/.well-known/webfinger?resource=acct:${handle.handle}`)
     const selfLink = response.links.find(link => link.rel == 'self')
     const url = new URL(selfLink.href)
-    return url.hostname;
+    handle.instance = url.hostname;
+    // If a user inputs @h@social.besties.house but their handle is actually @h@besties.house,
+    // we want to use the latter
+    handle.handle = response.subject?.replace(/^acct:/, '') ?? handle.handle;
+    return handle
 }
 
 /**
@@ -579,9 +583,8 @@ async function circleMain() {
     generateBtn.style.display = "none";
 
     let fediHandle = document.getElementById("txt_mastodon_handle");
-    const selfUser = parseHandle(fediHandle.value);
 
-    selfUser.instance = await getDelegateInstance(selfUser)
+    const selfUser = await getDelegatedHandle(parseHandle(fediHandle.value));
 
     let form = document.getElementById("generateForm");
     let backend = form.backend;
