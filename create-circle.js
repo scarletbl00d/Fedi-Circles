@@ -115,6 +115,12 @@ class ApiClient {
         let { software } = apiResponse;
         software.name = software.name.toLowerCase();
 
+        if (software.name.includes("fedibird")) {
+            const client = new FedibirdApiClient(instance, true);
+            instanceTypeCache.set(instance, client);
+            return client;
+        }
+
         if (software.name.includes("misskey") ||
             software.name.includes("calckey") ||
             software.name.includes("foundkey") ||
@@ -219,7 +225,7 @@ class MastodonApiClient extends ApiClient {
             renotes: note["reblogs_count"] || 0,
             favorites: note["favourites_count"],
             // Actually a Pleroma/Akkoma thing
-            extra_reacts: note?.["pleroma"]?.["emoji_reactions"]?.length > 0,
+            extra_reacts: note?.["emoji_reactions"]?.length > 0 || note?.["pleroma"]?.["emoji_reactions"]?.length > 0,
             instance: this._instance,
             author: user
         }));
@@ -259,7 +265,7 @@ class MastodonApiClient extends ApiClient {
                 renotes: note["reblogs_count"] || 0,
                 favorites: note["favourites_count"],
                 // Actually a Pleroma/Akkoma thing
-                extra_reacts: note?.["pleroma"]?.["emoji_reactions"]?.length > 0,
+                extra_reacts: note?.["emoji_reactions"]?.length > 0 || note?.["pleroma"]?.["emoji_reactions"]?.length > 0,
                 instance: handle.instance,
                 author: {
                     id: note["account"]["id"],
@@ -346,6 +352,60 @@ class PleromaApiClient extends MastodonApiClient {
 
     getClientName() {
         return "pleroma";
+    }
+}
+
+class FedibirdApiClient extends MastodonApiClient {
+    /**
+     * @param {string} instance
+     * @param {boolean} emoji_reacts
+     */
+    constructor(instance, emoji_reacts) {
+        super(instance);
+        this._emoji_reacts = emoji_reacts;
+    }
+
+    async getFavs(note, extra_reacts) {
+        // Frdibird supports both favs and emoji reacts
+        // with several emoji reacts per users being possible.
+        // Coalesce them and count every user only once
+        let favs = await super.getFavs(note);
+
+        if (!this._emoji_reacts || !extra_reacts)
+            return favs;
+
+        /**
+         * @type {Map<string, FediUser>}
+         */
+        let users = new Map();
+        if (favs !== null) {
+            favs.forEach(u => {
+                users.set(u.id, u);
+            });
+        }
+
+        const url = `https://${this._instance}/api/v1/statuses/${note.id}/emoji_reactioned_by`;
+        const response = await apiRequest(url) ?? [];
+
+        for (const reaction of response) {
+            let account = reaction["account"];
+            let u = {
+                id: account["id"],
+                avatar: account["avatar"],
+                bot: account["bot"],
+                name: account["display_name"],
+                handle: parseHandle(account["acct"], note.instance)
+            }
+
+            if(!users.has(u.id))
+                users.set(u.id, u);
+        }
+
+        return Array.from(users.values());
+    }
+
+    getClientName() {
+        return "fedibird";
     }
 }
 
@@ -584,6 +644,9 @@ async function circleMain() {
             break;
         case "misskey":
             client = new MisskeyApiClient(selfUser.instance);
+            break;
+        case "fedibird":
+            client = new FedibirdApiClient(selfUser.instance, true);
             break;
         default:
             progress.innerText = "Detecting instance...";
