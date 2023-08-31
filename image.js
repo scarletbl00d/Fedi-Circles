@@ -50,7 +50,7 @@ function render(users, selfUser) {
 				centerX - radius[layerIndex],
 				centerY - radius[layerIndex],
 				radius[layerIndex],
-				"@" + users[userNum].handle.name + "@" + users[userNum].handle.instance
+				"@" + users[userNum].handle
 			);
 
             userNum++;

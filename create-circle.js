@@ -19,13 +19,89 @@ async function apiRequest(url, options = null)
         });
 }
 
+function Handle(name, instance) {
+    let handleObj = Object.create(Handle.prototype);
+    handleObj.name = name;
+    handleObj.instance = instance;
+    handleObj._baseInstance = null;
+    handleObj._apiInstance = null;
+
+    return handleObj;
+}
+
+Object.defineProperty(Handle.prototype, "baseInstance", {
+    get: function () {
+        return this._baseInstance || this.instance;
+    }
+});
+
+Object.defineProperty(Handle.prototype, "apiInstance", {
+    get: function () {
+        return this._apiInstance || this.instance;
+    }
+});
+
+Object.defineProperty(Handle.prototype, "baseHandle", {
+    get: function () {
+        return this.name + "@" + this.baseInstance;
+    }
+});
+
+Handle.prototype.toString = function () {
+    return this.name + "@" + this.instance;
+};
+
 /**
- * @typedef {{
- *     handle: string,
- *     name: string,
- *     instance: string,
- * }} Handle
+ * @returns {Promise<Handle>} The handle WebFingered, or the original on fail
  */
+Handle.prototype.webFinger = async function () {
+    if (this._baseInstance) {
+        return this;
+    }
+
+    let url = `https://${this.instance}/.well-known/webfinger?` + new URLSearchParams({
+        resource: `acct:${this}`
+    });
+
+    let webFinger = await apiRequest(url);
+
+    if (!webFinger)
+        return this;
+
+    let acct = webFinger["subject"];
+
+    if (typeof acct !== "string")
+        return this;
+
+    if (acct.startsWith("acct:")) {
+        acct = acct.substring("acct:".length);
+    }
+
+    let baseHandle = parseHandle(acct);
+    baseHandle._baseInstance = baseHandle.instance;
+    baseHandle.instance = this.instance;
+
+    const links = webFinger["links"];
+
+    if (!Array.isArray(links)) {
+        return baseHandle;
+    }
+
+    const selfLink = links.find(link => link["rel"] === "self");
+    if (!selfLink) {
+        return baseHandle;
+    }
+
+    try {
+        const url = new URL(selfLink["href"])
+        baseHandle._apiInstance = url.hostname;
+    } catch (e) {
+        console.error(`Error parsing WebFinger self link ${selfLink["href"]}: ${e}`);
+    }
+
+    return baseHandle;
+};
+
 
 /**
  * @typedef {{
@@ -190,7 +266,7 @@ class MastodonApiClient extends ApiClient {
     }
 
     async getUserIdFromHandle(handle) {
-        const url = `https://${this._instance}/api/v1/accounts/lookup?acct=${handle.handle}`;
+        const url = `https://${this._instance}/api/v1/accounts/lookup?acct=${handle.baseHandle}`;
         const response = await apiRequest(url, null);
 
         if (!response) {
@@ -374,8 +450,11 @@ class MisskeyApiClient extends ApiClient {
         let id = null;
 
         for (const user of Array.isArray(lookup) ? lookup : []) {
-            if ((user["host"] === handle.instance || this._instance === handle.instance && user["host"] === null)
-                && user["username"] === handle.name) {
+            const isLocal = user?.["host"] === handle.instance ||
+                user?.["host"] === handle.baseInstance ||
+                this._instance === handle.apiInstance && user?.["host"] === null;
+
+            if (isLocal && user?.["username"] === handle.name && user["id"]) {
                 id = user["id"];
                 break;
             }
@@ -547,28 +626,7 @@ function parseHandle(fediHandle, fallbackInstance = "") {
     fediHandle = fediHandle.replaceAll(" ", "");
     const [name, instance] = fediHandle.split("@", 2);
 
-    return {
-        handle: fediHandle,
-        name: name,
-        instance: instance || fallbackInstance,
-    };
-}
-
-/**
- * @typedef @param {Handle} handle
- * @returns {Promise<Handle>}
- */
-async function getDelegatedHandle(handle) {
-    // We're checking webfinger to see which URL is for the user,
-    // since that may be on a different domain than the webfinger request
-    const response = await apiRequest(`https://${handle.instance}/.well-known/webfinger?resource=acct:${handle.handle}`)
-    const selfLink = response.links.find(link => link.rel == 'self')
-    const url = new URL(selfLink.href)
-    handle.instance = url.hostname;
-    // If a user inputs @h@social.besties.house but their handle is actually @h@besties.house,
-    // we want to use the latter
-    handle.handle = response.subject?.replace(/^acct:/, '') ?? handle.handle;
-    return handle
+    return new Handle(name, instance || fallbackInstance);
 }
 
 /**
@@ -583,8 +641,7 @@ async function circleMain() {
     generateBtn.style.display = "none";
 
     let fediHandle = document.getElementById("txt_mastodon_handle");
-
-    const selfUser = await getDelegatedHandle(parseHandle(fediHandle.value));
+    const selfUser = await parseHandle(fediHandle.value).webFinger();
 
     let form = document.getElementById("generateForm");
     let backend = form.backend;
@@ -597,17 +654,17 @@ async function circleMain() {
     let client;
     switch (backend.value) {
         case "mastodon":
-            client = new MastodonApiClient(selfUser.instance);
+            client = new MastodonApiClient(selfUser.apiInstance);
             break;
         case "pleroma":
-            client = new PleromaApiClient(selfUser.instance, true);
+            client = new PleromaApiClient(selfUser.apiInstance, true);
             break;
         case "misskey":
-            client = new MisskeyApiClient(selfUser.instance);
+            client = new MisskeyApiClient(selfUser.apiInstance);
             break;
         default:
             progress.innerText = "Detecting instance...";
-            client = await ApiClient.getClient(selfUser.instance);
+            client = await ApiClient.getClient(selfUser.apiInstance);
             backend.value = client.getClientName();
             break;
     }
