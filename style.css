@@ -1,10 +1,24 @@
 body {
-    background-color: #191b22;
-    color: #d9e1e8;
+    font-family: sans-serif;
     font-size: 20px;
     line-height: 200%;
     padding-top: 75px;
     text-align: center;
+}
+
+@media (prefers-color-scheme: dark) {
+    body {
+        background-color: #191b22;
+        color: #d9e1e8;
+    }
+
+    a:link {
+        color: #dd87ff;
+    }
+
+    a:visited {
+        color: #6153ff;
+    }
 }
 
 input[type="text"]
@@ -22,9 +36,12 @@ canvas {
     width: 90%;
 }
 
-a {
+a:hover {
     text-decoration: none;
-    color: #AAAAAA;
+}
+
+a:active {
+    color: #ff6200;
 }
 
 #outDiv {
