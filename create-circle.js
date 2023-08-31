@@ -703,6 +703,30 @@ function incConnectionValue(connectionList, user, plus) {
     connectionList.get(user.id).conStrength += plus;
 }
 
+// TODO: Store the profile URL in the handle
+async function webfingerVisit(name, instance) {
+    const webfingerUrl = `https://${instance}/.well-known/webfinger?resource=acct:${name}@${instance}`;
+    const response = await apiRequest(webfingerUrl);
+
+    if (!response) {
+        return;
+    }
+
+    const links = response.links;
+
+    if (!Array.isArray(links)) {
+        return;
+    }
+
+    const profileLink = links.find(link => link.rel === "http://webfinger.net/rel/profile-page");
+
+    if (!profileLink) {
+        return;
+    }
+
+    window.open(profileLink.href, "_blank");
+}
+
 /**
  * @param {FediUser} localUser
  * @param {Map<string, RatedUser>} connectionList
@@ -722,12 +746,30 @@ function showConnections(localUser, connectionList) {
     ];
 
     usersDivs.forEach((div) => div.innerHTML = "")
-    
-    for (let i= 0; i < items.length; i++) {
-        let newUser = document.createElement("p");
-        newUser.innerText = "@" + items[i].handle;
 
-        createUserObj(items[i]);
+    const [inner, middle, outer] = usersDivs;
+    inner.innerHTML = "<div><h3>Inner Circle</h3></div>";
+    middle.innerHTML = "<div><h3>Middle Circle</h3></div>";
+    outer.innerHTML = "<div><h3>Outer Circle</h3></div>";
+
+    for (let i= 0; i < items.length; i++) {
+        const newUser = document.createElement("a");
+        newUser.className = "userItem";
+        newUser.innerText = items[i].handle.name;
+        newUser.title = items[i].name;
+        const handle = items[i].handle;
+        newUser.href = `javascript: webfingerVisit(${JSON.stringify(handle.name)}, ${JSON.stringify(handle.instance)})`;
+
+        const newUserHost = document.createElement("span");
+        newUserHost.className = "userHost";
+        newUserHost.innerText = "@" + items[i].handle.instance;
+        newUser.appendChild(newUserHost);
+
+        const newUserImg = document.createElement("img");
+        newUserImg.src = items[i].avatar;
+        newUserImg.title = newUserImg.alt = stripName(items[i].name || items[i].handle.name) + "'s avatar";
+        newUserImg.className = "userImg";
+        newUser.prepend(newUserImg);
 
         let udNum = 0;
         if (i > numb[0]) udNum = 1;
@@ -735,15 +777,22 @@ function showConnections(localUser, connectionList) {
         usersDivs[udNum].appendChild(newUser);
     }
 
+    usersDivs.forEach((div) => {
+        const items = div.querySelectorAll(".userItem");
+
+        for (let i = 0; i < items.length - 1; i++) {
+            const item = items[i];
+            item.innerHTML += ", ";
+        }
+    });
+
+    const outDiv = document.getElementById("outDiv");
+    outDiv.style.display = "block";
+    document.getElementById("outSelfUser").innerText = stripName(localUser.name || localUser.handle.name);
+
     render(items, localUser);
 }
 
-/**
- * @param {FediUser} usr
- */
-function createUserObj(usr) {
-    let usrElement = document.createElement("div");
-    usrElement.innerHTML = `<img src="${usr.avatar}" width="20px">&nbsp;&nbsp;&nbsp;<b>${usr.name}</b>&nbsp;&nbsp;`;
-    document.getElementById("outDiv").appendChild(usrElement);
+function stripName(name) {
+    return name.replaceAll(/:[a-zA-Z0-9_]+:/g, "").trim();
 }
-
