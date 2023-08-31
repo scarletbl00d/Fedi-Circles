@@ -31,6 +31,10 @@ a {
     font-size: 20%;
 }
 
+#outInfo {
+    font-style: italic;
+}
+
 #usersDiv {
     margin-top: 30px;
     line-height: 100%;
