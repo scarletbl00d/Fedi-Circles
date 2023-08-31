@@ -12,6 +12,13 @@ async function apiRequest(url, options = null)
     }
 
     return await fetch(url, options ?? {})
+        .then(response => {
+            if (response.ok) {
+                return response;
+            }
+
+            throw new Error(`Error fetching ${url}: ${response.status} ${response.statusText}`);
+        })
         .then(response => response.json())
         .catch(error => {
             console.error(`Error fetching ${url}: ${error}`);
@@ -267,7 +274,12 @@ class MastodonApiClient extends ApiClient {
 
     async getUserIdFromHandle(handle) {
         const url = `https://${this._instance}/api/v1/accounts/lookup?acct=${handle.baseHandle}`;
-        const response = await apiRequest(url, null);
+        let response = await apiRequest(url, null);
+
+        if (!response) {
+            const url = `https://${this._instance}/api/v1/accounts/lookup?acct=${handle}`;
+            response = await apiRequest(url, null);
+        }
 
         if (!response) {
             return null;
