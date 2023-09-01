@@ -32,6 +32,7 @@ function Handle(name, instance) {
     handleObj.instance = instance;
     handleObj._baseInstance = null;
     handleObj._apiInstance = null;
+    handleObj.profileUrl = null;
 
     return handleObj;
 }
@@ -104,6 +105,15 @@ Handle.prototype.webFinger = async function () {
         baseHandle._apiInstance = url.hostname;
     } catch (e) {
         console.error(`Error parsing WebFinger self link ${selfLink["href"]}: ${e}`);
+    }
+
+    const profileLink = links.find(link => link["rel"] === "http://webfinger.net/rel/profile-page");
+    if (profileLink?.["href"]) {
+        try {
+            baseHandle.profileUrl = new URL(profileLink["href"]);
+        } catch (e) {
+            console.error(`Error parsing WebFinger profile page link ${profileLink["href"]}: ${e}`);
+        }
     }
 
     return baseHandle;
@@ -791,30 +801,6 @@ function incConnectionValue(connectionList, user, plus) {
     connectionList.get(user.id).conStrength += plus;
 }
 
-// TODO: Store the profile URL in the handle
-async function webfingerVisit(name, instance) {
-    const webfingerUrl = `https://${instance}/.well-known/webfinger?resource=acct:${name}@${instance}`;
-    const response = await apiRequest(webfingerUrl);
-
-    if (!response) {
-        return;
-    }
-
-    const links = response.links;
-
-    if (!Array.isArray(links)) {
-        return;
-    }
-
-    const profileLink = links.find(link => link.rel === "http://webfinger.net/rel/profile-page");
-
-    if (!profileLink) {
-        return;
-    }
-
-    window.open(profileLink.href, "_blank");
-}
-
 /**
  * @param {FediUser} localUser
  * @param {Map<string, RatedUser>} connectionList
@@ -845,8 +831,16 @@ function showConnections(localUser, connectionList) {
         newUser.className = "userItem";
         newUser.innerText = items[i].handle.name;
         newUser.title = items[i].name;
+        // I'm so sorry
+        newUser.href = "javascript:void(0)";
         const handle = items[i].handle;
-        newUser.href = `javascript: webfingerVisit(${JSON.stringify(handle.name)}, ${JSON.stringify(handle.instance)})`;
+        newUser.onclick = async () => {
+            const fingeredHandle = await handle.webFinger();
+            if (fingeredHandle.profileUrl)
+                window.open(fingeredHandle.profileUrl, "_blank");
+            else
+                alert("Could not the profile URL for " + fingeredHandle.baseHandle);
+        };
 
         const newUserHost = document.createElement("span");
         newUserHost.className = "userHost";
@@ -857,6 +851,9 @@ function showConnections(localUser, connectionList) {
         newUserImg.src = items[i].avatar;
         newUserImg.title = newUserImg.alt = stripName(items[i].name || items[i].handle.name) + "'s avatar";
         newUserImg.className = "userImg";
+        newUserImg.onerror = () => {
+            newUserImg.alt = "";
+        };
         newUser.prepend(newUserImg);
 
         let udNum = 0;
