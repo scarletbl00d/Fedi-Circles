@@ -12,6 +12,13 @@ async function apiRequest(url, options = null)
     }
 
     return await fetch(url, options ?? {})
+        .then(response => {
+            if (response.ok) {
+                return response;
+            }
+
+            throw new Error(`Error fetching ${url}: ${response.status} ${response.statusText}`);
+        })
         .then(response => response.json())
         .catch(error => {
             console.error(`Error fetching ${url}: ${error}`);
@@ -20,15 +27,88 @@ async function apiRequest(url, options = null)
 }
 
 function Handle(name, instance) {
-    let handle = Object.create(Handle.prototype);
-    handle.name = name;
-    handle.instance = instance;
-    return handle;
+    let handleObj = Object.create(Handle.prototype);
+    handleObj.name = name;
+    handleObj.instance = instance;
+    handleObj._baseInstance = null;
+    handleObj._apiInstance = null;
+
+    return handleObj;
 }
 
-Handle.prototype.toString = function() {
-    return `${this.name}@${this.instance}`;
-}
+Object.defineProperty(Handle.prototype, "baseInstance", {
+    get: function () {
+        return this._baseInstance || this.instance;
+    }
+});
+
+Object.defineProperty(Handle.prototype, "apiInstance", {
+    get: function () {
+        return this._apiInstance || this.instance;
+    }
+});
+
+Object.defineProperty(Handle.prototype, "baseHandle", {
+    get: function () {
+        return this.name + "@" + this.baseInstance;
+    }
+});
+
+Handle.prototype.toString = function () {
+    return this.name + "@" + this.instance;
+};
+
+/**
+ * @returns {Promise<Handle>} The handle WebFingered, or the original on fail
+ */
+Handle.prototype.webFinger = async function () {
+    if (this._baseInstance) {
+        return this;
+    }
+
+    let url = `https://${this.instance}/.well-known/webfinger?` + new URLSearchParams({
+        resource: `acct:${this}`
+    });
+
+    let webFinger = await apiRequest(url);
+
+    if (!webFinger)
+        return this;
+
+    let acct = webFinger["subject"];
+
+    if (typeof acct !== "string")
+        return this;
+
+    if (acct.startsWith("acct:")) {
+        acct = acct.substring("acct:".length);
+    }
+
+    let baseHandle = parseHandle(acct);
+    baseHandle._baseInstance = baseHandle.instance;
+    baseHandle.instance = this.instance;
+
+    const links = webFinger["links"];
+
+    if (!Array.isArray(links)) {
+        return baseHandle;
+    }
+
+    const selfLink = links.find(link => link["rel"] === "self");
+    if (!selfLink) {
+        return baseHandle;
+    }
+
+    try {
+        const url = new URL(selfLink["href"])
+        baseHandle._apiInstance = url.hostname;
+    } catch (e) {
+        console.error(`Error parsing WebFinger self link ${selfLink["href"]}: ${e}`);
+    }
+
+    return baseHandle;
+};
+
 
 /**
  * @typedef {{
@@ -197,8 +277,13 @@ class MastodonApiClient extends ApiClient {
     }
 
     async getUserIdFromHandle(handle) {
-        const url = `https://${this._instance}/api/v1/accounts/lookup?acct=${handle.name}@${handle.instance}`;
-        const response = await apiRequest(url, null);
+        const url = `https://${this._instance}/api/v1/accounts/lookup?acct=${handle.baseHandle}`;
+        let response = await apiRequest(url, null);
+
+        if (!response) {
+            const url = `https://${this._instance}/api/v1/accounts/lookup?acct=${handle}`;
+            response = await apiRequest(url, null);
+        }
 
         if (!response) {
             return null;
@@ -381,8 +466,11 @@ class MisskeyApiClient extends ApiClient {
         let id = null;
 
         for (const user of Array.isArray(lookup) ? lookup : []) {
-            if ((user["host"] === handle.instance || this._instance === handle.instance && user["host"] === null)
-                && user["username"] === handle.name) {
+            const isLocal = user?.["host"] === handle.instance ||
+                user?.["host"] === handle.baseInstance ||
+                this._instance === handle.apiInstance && user?.["host"] === null;
+
+            if (isLocal && user?.["username"] === handle.name && user["id"]) {
                 id = user["id"];
                 break;
             }
@@ -565,7 +653,7 @@ async function circleMain() {
     generateBtn.style.display = "none";
 
     let fediHandle = document.getElementById("txt_mastodon_handle");
-    const selfUser = parseHandle(fediHandle.value);
+    const selfUser = await parseHandle(fediHandle.value).webFinger();
 
     let form = document.getElementById("generateForm");
     let backend = form.backend;
@@ -578,17 +666,17 @@ async function circleMain() {
     let client;
     switch (backend.value) {
         case "mastodon":
-            client = new MastodonApiClient(selfUser.instance);
+            client = new MastodonApiClient(selfUser.apiInstance);
             break;
         case "pleroma":
-            client = new PleromaApiClient(selfUser.instance, true);
+            client = new PleromaApiClient(selfUser.apiInstance, true);
             break;
         case "misskey":
-            client = new MisskeyApiClient(selfUser.instance);
+            client = new MisskeyApiClient(selfUser.apiInstance);
             break;
         default:
             progress.innerText = "Detecting instance...";
-            client = await ApiClient.getClient(selfUser.instance);
+            client = await ApiClient.getClient(selfUser.apiInstance);
             backend.value = client.getClientName();
             break;
     }
