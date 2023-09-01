@@ -288,7 +288,7 @@ class ApiClient {
      * @param {Note} note
      * @param {boolean} extra_reacts Also include emoji reacts
      *
-     * return {Promise<FediUser[] | null>}
+     * @return {Promise<FediUser[] | null>}
      */
     async getConsolidatedReactions(note, extra_reacts = false){
         let favs = await this.getFavs(note);
