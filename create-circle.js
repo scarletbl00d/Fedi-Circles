@@ -867,7 +867,7 @@ function showConnections(localUser, connectionList) {
 
         for (let i = 0; i < items.length - 1; i++) {
             const item = items[i];
-            item.innerHTML += ", ";
+            item.appendChild(document.createTextNode(", "));
         }
     });
 
