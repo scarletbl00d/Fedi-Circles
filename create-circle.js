@@ -239,28 +239,28 @@ class ApiClient {
     /**
      * @param {Handle} handle
      *
-     * @return {Promise<FediUser>}
+     * @returns {Promise<FediUser>}
      */
     async getUserIdFromHandle(handle){ throw new Error("Not implemented"); }
 
     /**
      * @param {FediUser} user
      *
-     * return {Promise<Note[]>}
+     * @returns {Promise<Note[]>}
      */
     async getNotes(user){ throw new Error("Not implemented"); }
 
     /**
      * @param {Note} note
      *
-     * return {Promise<FediUser[] | null>}
+     * @returns {Promise<FediUser[] | null>}
      */
     async getRenotes(note){ throw new Error("Not implemented"); }
 
     /**
      * @param {Note} note
      *
-     * return {Promise<Note[] | null>}
+     * @returns {Promise<Note[] | null>}
      */
     async getReplies(note){ throw new Error("Not implemented"); }
 
@@ -268,12 +268,12 @@ class ApiClient {
      * @param {Note} note
      * @param {boolean} extra_reacts
      *
-     * return {Promise<FediUser[] | null>}
+     * @returns {Promise<FediUser[] | null>}
      */
     async getFavs(note, extra_reacts) { throw new Error("Not implemented"); }
 
     /**
-     * @return string
+     * @returns string
      */
     getClientName() { throw new Error("Not implemented"); }
 }
