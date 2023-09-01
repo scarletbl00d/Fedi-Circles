@@ -1,10 +1,24 @@
 body {
-    background-color: #191b22;
-    color: #d9e1e8;
+    font-family: sans-serif;
     font-size: 20px;
     line-height: 200%;
     padding-top: 75px;
     text-align: center;
+}
+
+@media (prefers-color-scheme: dark) {
+    body {
+        background-color: #191b22;
+        color: #d9e1e8;
+    }
+
+    a:link {
+        color: #aaa0ff;
+    }
+
+    a:visited {
+        color: #dd87ff;
+    }
 }
 
 input[type="text"]
@@ -20,28 +34,73 @@ button {
 canvas {
     max-width: 1000px;
     width: 90%;
+    image-rendering: smooth;
 }
 
-a {
+a:hover {
     text-decoration: none;
-    color: #AAAAAA;
+}
+
+a:active {
+    color: #ff6200;
 }
 
 #outDiv {
-    font-size: 20%;
+    display: none;
+    margin-top: 30px;
+}
+
+#outInfo {
+    font-style: italic;
 }
 
 #usersDiv {
-    margin-top: 30px;
-    line-height: 100%;
+    line-height: 150%;
     font-size: 100%;
-}
-
-#credits {
-    min-width: 90%;
+    display: flex;
+    justify-content: center;
+    gap: 2em;
+    flex-wrap: wrap;
 }
 
 .userSubDiv {
     min-width: 400px;
     max-width: 90%;
+    display: flex;
+    flex-wrap: wrap;
+    flex-direction: column;
+    align-items: start;
+}
+
+.userItem {
+    display: inline;
+    text-align: left;
+}
+
+.userItem {
+    text-decoration: underline 1px;
+    text-decoration-style: dotted;
+}
+
+.userItem:hover {
+    text-decoration-style: solid;
+}
+
+.userHost {
+    opacity: 0.75;
+}
+
+.userImg {
+    border-radius: 50%;
+    width: 1em;
+    height: 1em;
+
+    vertical-align: middle;
+    user-select: none;
+    -webkit-user-select: none;
+    margin-right: 0.5em;
+}
+
+#credits {
+    min-width: 90%;
 }

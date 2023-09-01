@@ -1,19 +1,13 @@
-
 <!DOCTYPE html>
-<html lang="de">
+<html lang="en">
 <meta charset="UTF-8">
 <title>Fedi Circle Creator</title>
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="stylesheet" href="style.css">
-<style>
-</style>
-<script src=""></script>
 <body>
     <script src="create-circle.js"></script>
     <script src="image.js"></script>
-    <h1>Trötpty</h1>
-    <h3><span style="text-decoration: line-through" aria-hidden="true">Mastodon</span> Fedi Circle Creator</h3>
-    <!-- TODO Logo? -->
+    <h1>&#11093; Fedi Circle Creator</h1>
     <form id="generateForm" onsubmit="(async () => await circleMain())(); return false;">
         <input id="txt_mastodon_handle" type="text" placeholder="@sonnenbrandi@mieke.club">
         <br><br>
@@ -22,34 +16,35 @@
             <label><input type="radio" name="backend" value="mastodon" autocomplete="off"> Mastodon API</label>
             <label><input type="radio" name="backend" value="misskey" autocomplete="off"> Misskey API</label>
             <label><input type="radio" name="backend" value="pleroma" autocomplete="off"> Pleroma API</label>
-            <label><input type="radio" name="backend" value="fedibird" autocomplete="off"> Fedibird API</label>
         </span>
         <br>
         <button type="submit" id="generateButton">Generate circle</button>
     </form>
     <span id="outInfo"></span>
-    <a href="" id="btn_download" class="button" download="mastodon-circle.png" style="display: none;">DOWNLOAD (klappt wsl nicht)</a>
-    <!-- <button id="btn_download" onClick="downloadImage()" style="display: none;">DOWNLOAD</button> -->
     <br><br>
     <!-- Canvas for the final Image -->
-    <canvas id="canvas" width="1000" height="1000"></canvas>
+    <canvas id="canvas" width="1000" height="1000" style="background-color: gray">
+
+    </canvas>
     <br>
     <!-- List of all people in Circle -->
-    <div id="usersDiv">
-        <div id="ud1" class="userSubDiv"></div>
-        <div id="ud2" class="userSubDiv"></div>
-        <div id="ud3" class="userSubDiv"></div>
+    <div id="outDiv">
+        <em>Click a user below to visit their profile.</em>
+        <h2><span id="outSelfUser"></span>'s Fedi Circle</h2>
+
+        <div id="usersDiv">
+            <div id="ud1" class="userSubDiv"></div>
+            <div id="ud2" class="userSubDiv"></div>
+            <div id="ud3" class="userSubDiv"></div>
+        </div>
     </div>
     <br><br><br>
     <div id="credits" style="width: 100%;">
-        <p>Added Fedibird support by <a href="https://github.com/noellabo/Mastodon-Circles">noellabo</a> </p>
-        <p>Contribute on <a href="https://github.com/AMNatty/Mastodon-Circles">Github</a> </p>
-        <p>Thanks to <a href="https://twitter.com/duiker101">Duiker101</a> for creating chirpty for Twitter</p>
-        <p>Original on <a href="https://github.com/andigandhi/Mastodon-Circles">Github</a> </p>
+        <p>Contribute on <a href="https://github.com/AMNatty/Mastodon-Circles">GitHub: AMNatty/Mastodon-Circles</a></p>
+        <p>Fedibird support by <a href="https://github.com/noellabo/Mastodon-Circles">noellabo</a></p>
+        <p>Based on <a href="https://github.com/andigandhi/Mastodon-Circles">andigandhi/Mastodon-Circles</a> </p>
     </div>
-    <!-- output for further projects ;) -->
-    <div id="outDiv" style="display: none;"></div>
     <!-- Preload the background image -->
-    <div style="display:none;"><img id="mieke_bg" src="mieke_bg.jpg" width="1000" height="1000" /></div>
+    <div style="display:none;"><img id="mieke_bg" src="background.png" width="1000" height="1000" /></div>
 </body>
 </html> 

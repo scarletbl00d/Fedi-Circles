@@ -2,9 +2,10 @@ const toRad = (x) => x * (Math.PI / 180);
 
 const dist = [200, 330, 450];
 const numb = [8, 15, 26];
-const radius = [64,58,50];
+const radius = [64, 58, 50];
 let userNum = 0;
 let remainingImg = 0;
+let totalImg = 0;
 
 function render(users, selfUser) {
 	userNum = 0;
@@ -12,28 +13,34 @@ function render(users, selfUser) {
 
 	const canvas = document.getElementById("canvas");
 	const ctx = canvas.getContext("2d");
-    
-    const width = canvas.width;
+
+	const width = canvas.width;
 	const height = canvas.height;
 
 	// fill the background
 	const bg_image = document.getElementById("mieke_bg");
 	ctx.drawImage(bg_image, 0, 0, 1000, 1000);
 
-	loadImage(ctx, selfUser.avatar, (width/2)-110, (height/2)-110, 110, "@" + selfUser.handle.name + "@" + selfUser.handle.instance);
+	const tasks = [];
+
+	loadImage(ctx,
+        selfUser.avatar,
+        (width / 2) - 110,
+        (height / 2) - 110,
+        110,
+        "@" + selfUser.handle,
+tasks);
 
 	// loop over the layers
-	for (var layerIndex=0; layerIndex<3; layerIndex++) {
-        //let layerIndex = get_layer(num);
-
+	for (let layerIndex= 0; layerIndex < 3; layerIndex++) {
 		const angleSize = 360 / numb[layerIndex];
 
 		// loop over each circle of the layer
 		for (let i = 0; i < numb[layerIndex]; i++) {
 			remainingImg += 1;
-			// if we are trying to render a circle but we ran out of users, just exit the loop. We are done.
-			if (userNum>=users.length) break;
-			// We need an offset or the first circle will always on the same line and it looks weird
+			// if we are trying to render a circle, but we ran out of users, just exit the loop. We are done.
+			if (userNum >= users.length) break;
+			// We need an offset or the first circle will always on the same line, and it looks weird
 			// Try removing this to see what happens
 			const offset = layerIndex * 30;
 
@@ -44,34 +51,33 @@ function render(users, selfUser) {
 			const centerX = Math.cos(r) * dist[layerIndex] + width / 2;
 			const centerY = Math.sin(r) * dist[layerIndex] + height / 2;
 
-            loadImage(
-                ctx,
-                users[userNum].avatar,
+			loadImage(
+				ctx,
+				users[userNum].avatar,
 				centerX - radius[layerIndex],
 				centerY - radius[layerIndex],
 				radius[layerIndex],
-				"@" + users[userNum].handle.name + "@" + users[userNum].handle.instance
+				"@" + users[userNum].handle,
+				tasks
 			);
 
-            userNum++;
+			userNum++;
 		}
 	}
 
-	ctx.fillStyle = "#0505AA";
-	ctx.fillText("Be gay do crime uwu", 10, 15);
-	ctx.fillStyle = "#666666";
-	ctx.fillText("https://data.natty.sh/fedi-circles", width-120, height-15, 110)
-    //ctx.fillText("@sonnenbrandi@mieke.club mit lieben Grüßen an Duiker101", width-300, height-15, 290)
-};
+	totalImg = remainingImg;
 
-function get_layer(i) {
-    if (i<numb[0]) return 0;
-    if (i<numb[0]+numb[1]) return 1;
-    return 2;   
+	ctx.font = "12px sans-serif";
+	ctx.fillStyle = "silver";
+	ctx.fillText("Be gay do crime uwu", 10, 15);
+	ctx.fillStyle = "black";
+	ctx.fillText("https://data.natty.sh/fedi-circles", width - 170, height - 15, 160);
 }
 
 // Load the image from the URL and draw it in a circle
-function loadImage(ctx, url, x, y, r, name) {
+function loadImage(ctx, url, x, y, r, name, tasks) {
+	let progress = document.getElementById("outInfo");
+
 	const addText = () => {
 		ctx.font = "bold 11px sans-serif";
 		const textWidth = ctx.measureText(name).width;
@@ -91,33 +97,40 @@ function loadImage(ctx, url, x, y, r, name) {
 		}
 	};
 
-    const img = new Image;
-    img.onload = function(){
-        ctx.save();
-        ctx.beginPath();
-        ctx.arc(x+r, y+r, r, 0, Math.PI * 2, true);
-        ctx.closePath();
-        ctx.clip();
+	tasks.push(addText);
 
-        ctx.drawImage(img,x,y,r*2,r*2);
-
-        ctx.beginPath();
-        ctx.arc(x+r, y+r, r, 0, Math.PI * 2, true);
-        ctx.clip();
-        ctx.closePath();
-        ctx.restore();
-
-		addText();
-
+	const decrementRemaining = () => {
 		remainingImg -= 1;
+		progress.innerText = `Loading avatars: ${totalImg - remainingImg}/${totalImg}`;
+
 		if (remainingImg <= 0) {
-			document.getElementById("btn_download").href = document.getElementById("canvas").toDataURL("image/png");
-    		document.getElementById("btn_download").style.display = "inline";
+			progress.innerText = "Done :3";
+			tasks.forEach((task) => task());
 		}
-    };
-	img.onerror = function() {
-		addText();
 	};
 
-    img.src = url;
+	const img = new Image();
+	img.onload = function(){
+		ctx.save();
+		ctx.beginPath();
+		ctx.arc(x + r, y + r, r, 0, Math.PI * 2, true);
+		ctx.closePath();
+		ctx.clip();
+
+		ctx.drawImage(img, x, y, r * 2, r * 2);
+
+		ctx.beginPath();
+		ctx.arc(x + r, y + r, r, 0, Math.PI * 2, true);
+		ctx.clip();
+		ctx.closePath();
+		ctx.restore();
+
+		decrementRemaining();
+	};
+
+	img.onerror = function() {
+		decrementRemaining();
+	};
+
+	img.src = url;
 }
