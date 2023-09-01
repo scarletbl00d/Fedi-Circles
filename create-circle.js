@@ -839,7 +839,7 @@ function showConnections(localUser, connectionList) {
             if (fingeredHandle.profileUrl)
                 window.open(fingeredHandle.profileUrl, "_blank");
             else
-                alert("Could not the profile URL for " + fingeredHandle.baseHandle);
+                alert("Could not fetch the profile URL for " + fingeredHandle.baseHandle);
         };
 
         const newUserHost = document.createElement("span");
@@ -849,10 +849,10 @@ function showConnections(localUser, connectionList) {
 
         const newUserImg = document.createElement("img");
         newUserImg.src = items[i].avatar;
-        newUserImg.title = newUserImg.alt = stripName(items[i].name || items[i].handle.name) + "'s avatar";
+        newUserImg.alt = "";
         newUserImg.className = "userImg";
-        newUserImg.onerror = () => {
-            newUserImg.alt = "";
+        newUserImg.onload = () => {
+            newUserImg.title = newUserImg.alt = stripName(items[i].name || items[i].handle.name) + "'s avatar";
         };
         newUser.prepend(newUserImg);
 
