@@ -168,7 +168,7 @@ class ApiClient {
         let nodeInfo = await apiRequest(url);
 
         if (!nodeInfo || !Array.isArray(nodeInfo.links)) {
-            const client = new MastodonApiClient(instance);
+            const client = new MastodonApiClient(instance, true);
             instanceTypeCache.set(instance, client);
             return client;
         }
@@ -182,7 +182,7 @@ class ApiClient {
 
         if (!apiLink) {
             console.error(`No NodeInfo API found for ${instance}}`);
-            const client = new MastodonApiClient(instance);
+            const client = new MastodonApiClient(instance, true);
             instanceTypeCache.set(instance, client);
             return client;
         }
@@ -205,13 +205,19 @@ class ApiClient {
                 return client;
             }
 
-            const client = new MastodonApiClient(instance);
+            const client = new MastodonApiClient(instance, true);
             instanceTypeCache.set(instance, client);
             return client;
         }
 
         let { software } = apiResponse;
         software.name = software.name.toLowerCase();
+
+        if (software.name.includes("fedibird")) {
+            const client = new FedibirdApiClient(instance, true);
+            instanceTypeCache.set(instance, client);
+            return client;
+        }
 
         if (software.name.includes("misskey") ||
             software.name.includes("calckey") ||
@@ -231,7 +237,7 @@ class ApiClient {
             return client;
         }
 
-        const client = new MastodonApiClient(instance);
+        const client = new MastodonApiClient(instance, true);
         instanceTypeCache.set(instance, client);
         return client;
     }
@@ -266,11 +272,50 @@ class ApiClient {
 
     /**
      * @param {Note} note
-     * @param {boolean} extra_reacts
      *
      * @returns {Promise<FediUser[] | null>}
      */
-    async getFavs(note, extra_reacts) { throw new Error("Not implemented"); }
+    async getReactions(note){ return []; }
+
+    /**
+     * @param {Note} note
+     *
+     * @returns {Promise<FediUser[] | null>}
+     */
+    async getFavs(note) { throw new Error("Not implemented"); }
+
+    /**
+     * @param {Note} note
+     * @param {boolean} extra_reacts Also include emoji reacts
+     *
+     * return {Promise<FediUser[] | null>}
+     */
+    async getConsolidatedReactions(note, extra_reacts = false){
+        let favs = await this.getFavs(note);
+
+        if (!extra_reacts)
+            return favs;
+
+        /**
+         * @type {Map<string, FediUser>}
+         */
+        let users = new Map();
+        if (favs !== null) {
+            favs.forEach(u => {
+                users.set(u.id, u);
+            });
+        }
+
+        const reactions = await this.getReactions(note);
+        if (reactions !== null) {
+            reactions.forEach(u => {
+                users.set(u.id, u);
+            });
+        }
+
+
+        return Array.from(users.values());
+    }
 
     /**
      * @returns string
@@ -281,9 +326,13 @@ class ApiClient {
 class MastodonApiClient extends ApiClient {
     /**
      * @param {string} instance
+     * @param {boolean} emoji_reacts
+     * @param {MastodonApiClient} flavor
      */
-    constructor(instance) {
+    constructor(instance, emoji_reacts, flavor = MastodonFlavor.MASTODON) {
         super(instance);
+        this._emoji_reacts = emoji_reacts;
+        this._flavor = flavor;
     }
 
     async getUserIdFromHandle(handle) {
@@ -316,13 +365,18 @@ class MastodonApiClient extends ApiClient {
             return null;
         }
 
+        if (response?.some(note => note?.["emoji_reactions"]?.length)) {
+            this._flavor = MastodonFlavor.FEDIBIRD;
+        } else if (response?.some(note => note?.["pleroma"]?.["emoji_reactions"]?.length)) {
+            this._flavor = MastodonFlavor.PLEROMA;
+        }
+
         return response.map(note => ({
             id: note.id,
             replies: note["replies_count"] || 0,
             renotes: note["reblogs_count"] || 0,
             favorites: note["favourites_count"],
-            // Actually a Pleroma/Akkoma thing
-            extra_reacts: note?.["pleroma"]?.["emoji_reactions"]?.length > 0,
+            extra_reacts: note?.["emoji_reactions"]?.length > 0 || note?.["pleroma"]?.["emoji_reactions"]?.length > 0,
             instance: this._instance,
             author: user
         }));
@@ -353,7 +407,14 @@ class MastodonApiClient extends ApiClient {
             return null;
         }
 
+        if (response["descendants"]?.some(note => note?.["emoji_reactions"]?.length)) {
+            this._flavor = MastodonFlavor.FEDIBIRD;
+        } else if (response["descendants"]?.some(note => note?.["pleroma"]?.["emoji_reactions"]?.length)) {
+            this._flavor = MastodonFlavor.PLEROMA;
+        }
+
         return response["descendants"].map(note => {
+
             let handle = parseHandle(note["account"]["acct"], noteIn.instance);
 
             return {
@@ -361,8 +422,7 @@ class MastodonApiClient extends ApiClient {
                 replies: note["replies_count"] || 0,
                 renotes: note["reblogs_count"] || 0,
                 favorites: note["favourites_count"],
-                // Actually a Pleroma/Akkoma thing
-                extra_reacts: note?.["pleroma"]?.["emoji_reactions"]?.length > 0,
+                extra_reacts: note?.["emoji_reactions"]?.length > 0 || note?.["pleroma"]?.["emoji_reactions"]?.length > 0,
                 instance: handle.instance,
                 author: {
                     id: note["account"]["id"],
@@ -375,7 +435,7 @@ class MastodonApiClient extends ApiClient {
         });
     }
 
-    async getFavs(note, extra_reacts) {
+    async getFavs(note) {
         const url = `https://${this._instance}/api/v1/statuses/${note.id}/favourited_by`;
         const response = await apiRequest(url);
 
@@ -392,6 +452,14 @@ class MastodonApiClient extends ApiClient {
         }));
     }
 
+    async getReactions(note) {
+        if (this._flavor === MastodonFlavor.MASTODON) {
+            return [];
+        }
+
+        return this._flavor.getReactions.call(this, note);
+    }
+
     getClientName() {
         return "mastodon";
     }
@@ -403,31 +471,20 @@ class PleromaApiClient extends MastodonApiClient {
      * @param {boolean} emoji_reacts
      */
     constructor(instance, emoji_reacts) {
-        super(instance);
-        this._emoji_reacts = emoji_reacts;
+        super(instance, emoji_reacts, MastodonFlavor.PLEROMA);
     }
 
-    async getFavs(note, extra_reacts) {
-        // Pleroma/Akkoma supports both favs and emoji reacts
-        // with several emoji reacts per users being possible.
-        // Coalesce them and count every user only once
-        let favs = await super.getFavs(note);
+    async getReactions(note) {
+        if (!this._emoji_reacts)
+            return [];
 
-        if (!this._emoji_reacts || !extra_reacts)
-            return favs;
+        const url = `https://${this._instance}/api/v1/pleroma/statuses/${note.id}/reactions`;
+        const response = await apiRequest(url) ?? [];
 
         /**
          * @type {Map<string, FediUser>}
          */
-        let users = new Map();
-        if (favs !== null) {
-            favs.forEach(u => {
-                users.set(u.id, u);
-            });
-        }
-
-        const url = `https://${this._instance}/api/v1/pleroma/statuses/${note.id}/reactions`;
-        const response = await apiRequest(url) ?? [];
+        const users = new Map();
 
         for (const reaction of response) {
             reaction["accounts"]
@@ -451,6 +508,55 @@ class PleromaApiClient extends MastodonApiClient {
         return "pleroma";
     }
 }
+
+class FedibirdApiClient extends MastodonApiClient {
+    /**
+     * @param {string} instance
+     * @param {boolean} emoji_reacts
+     */
+    constructor(instance, emoji_reacts) {
+        super(instance, emoji_reacts, MastodonFlavor.FEDIBIRD);
+    }
+
+    async getReactions(note) {
+        if (!this._emoji_reacts)
+            return [];
+
+        /**
+         * @type {Map<string, FediUser>}
+         */
+        let users = new Map();
+
+        const url = `https://${this._instance}/api/v1/statuses/${note.id}/emoji_reactioned_by`;
+        const response = await apiRequest(url) ?? [];
+
+        for (const reaction of response) {
+            let account = reaction["account"];
+            let u = {
+                id: account["id"],
+                avatar: account["avatar"],
+                bot: account["bot"],
+                name: account["display_name"],
+                handle: parseHandle(account["acct"], note.instance)
+            }
+
+            if(!users.has(u.id))
+                users.set(u.id, u);
+        }
+
+        return Array.from(users.values());
+    }
+
+    getClientName() {
+        return "fedibird";
+    }
+}
+
+const MastodonFlavor = {
+    MASTODON: MastodonApiClient.prototype,
+    PLEROMA: PleromaApiClient.prototype,
+    FEDIBIRD: FedibirdApiClient.prototype,
+};
 
 class MisskeyApiClient extends ApiClient {
     /**
@@ -605,7 +711,7 @@ class MisskeyApiClient extends ApiClient {
         });
     }
 
-    async getFavs(note, extra_reacts) {
+    async getFavs(note) {
         const url = `https://${this._instance}/api/notes/reactions`;
         const response = await apiRequest(url, {
             method: "POST",
@@ -676,7 +782,7 @@ async function circleMain() {
     let client;
     switch (backend.value) {
         case "mastodon":
-            client = new MastodonApiClient(selfUser.apiInstance);
+            client = new MastodonApiClient(selfUser.apiInstance, true);
             break;
         case "pleroma":
             client = new PleromaApiClient(selfUser.apiInstance, true);
@@ -687,7 +793,13 @@ async function circleMain() {
         default:
             progress.innerText = "Detecting instance...";
             client = await ApiClient.getClient(selfUser.apiInstance);
-            backend.value = client.getClientName();
+
+            backend.value = (() => {
+                switch (client.getClientName()) {
+                    case "fedibird": return "mastodon";
+                    default: return client.getClientName();
+                }
+            })();
             break;
     }
 
@@ -749,7 +861,7 @@ async function processNotes(client, connectionList, notes) {
  */
 async function evaluateNote(client, connectionList, note) {
     if (note.favorites > 0 || note.extra_reacts) {
-        await client.getFavs(note, note.extra_reacts).then(users => {
+        await client.getConsolidatedReactions(note, note.extra_reacts).then(users => {
             if (!users)
                 return;
 
