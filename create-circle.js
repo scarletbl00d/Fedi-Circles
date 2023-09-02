@@ -1083,7 +1083,8 @@ function showConnections(localUser, connectionList) {
         let udNum = 0;
         if (i > numb[0]) udNum = 1;
         if (i > numb[0] + numb[1]) udNum = 2;
-        usersDivs[udNum].appendChild(newUser);
+        if (i <= numb[0] + numb[1] + numb[2])
+            usersDivs[udNum].appendChild(newUser);
     }
 
     usersDivs.forEach((div) => {
