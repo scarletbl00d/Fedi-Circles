@@ -23,13 +23,15 @@ function render(users, selfUser) {
 
 	const tasks = [];
 
+	totalImg += 1;
+	remainingImg += 1;
 	loadImage(ctx,
         selfUser.avatar,
         (width / 2) - 110,
         (height / 2) - 110,
         110,
         "@" + selfUser.handle,
-tasks);
+		tasks);
 
 	// loop over the layers
 	for (let layerIndex= 0; layerIndex < 3; layerIndex++) {
@@ -37,9 +39,12 @@ tasks);
 
 		// loop over each circle of the layer
 		for (let i = 0; i < numb[layerIndex]; i++) {
-			remainingImg += 1;
 			// if we are trying to render a circle, but we ran out of users, just exit the loop. We are done.
 			if (userNum >= users.length) break;
+
+			totalImg += 1;
+			remainingImg += 1;
+
 			// We need an offset or the first circle will always on the same line, and it looks weird
 			// Try removing this to see what happens
 			const offset = layerIndex * 30;
@@ -64,8 +69,6 @@ tasks);
 			userNum++;
 		}
 	}
-
-	totalImg = remainingImg;
 
 	ctx.font = "12px sans-serif";
 	ctx.fillStyle = "silver";
@@ -129,6 +132,7 @@ function loadImage(ctx, url, x, y, r, name, tasks) {
 	};
 
 	img.onerror = function() {
+		console.error(`Error loading image: ${url}}`);
 		decrementRemaining();
 	};
 
