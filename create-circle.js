@@ -365,10 +365,10 @@ class MastodonApiClient extends ApiClient {
             return null;
         }
 
-        if (response?.some(note => note?.["emoji_reactions"]?.length)) {
-            this._flavor = MastodonFlavor.FEDIBIRD;
-        } else if (response?.some(note => note?.["pleroma"]?.["emoji_reactions"]?.length)) {
+        if (response?.some(note => note?.["pleroma"]?.["emoji_reactions"]?.length)) {
             this._flavor = MastodonFlavor.PLEROMA;
+        } else if (response?.some(note => note?.["emoji_reactions"]?.length)) {
+            this._flavor = MastodonFlavor.FEDIBIRD;
         }
 
         return response.map(note => ({
@@ -407,10 +407,10 @@ class MastodonApiClient extends ApiClient {
             return null;
         }
 
-        if (response["descendants"]?.some(note => note?.["emoji_reactions"]?.length)) {
-            this._flavor = MastodonFlavor.FEDIBIRD;
-        } else if (response["descendants"]?.some(note => note?.["pleroma"]?.["emoji_reactions"]?.length)) {
+        if (response["descendants"]?.some(note => note?.["pleroma"]?.["emoji_reactions"]?.length)) {
             this._flavor = MastodonFlavor.PLEROMA;
+        } else if (response["descendants"]?.some(note => note?.["emoji_reactions"]?.length)) {
+            this._flavor = MastodonFlavor.FEDIBIRD;
         }
 
         return response["descendants"].map(note => {
