@@ -3,7 +3,7 @@
  * @param {RequestInfo | URL} url
  * @param {{ body?: any } & RequestInit?} options
  */
-async function apiRequest(url, options = null)
+async function apiRequestWithHeaders(url, options = null)
 {
     console.log(`Fetching :: ${url}`);
 
@@ -19,11 +19,26 @@ async function apiRequest(url, options = null)
 
             throw new Error(`Error fetching ${url}: ${response.status} ${response.statusText}`);
         })
-        .then(response => response.json())
+        .then(response => new Promise((resolve, reject) => {
+            response.json()
+            .then(rbody => resolve({headers: response.headers, body: rbody}))
+            .catch(error => reject(error))
+        }))
         .catch(error => {
             console.error(`Error fetching ${url}: ${error}`);
             return null;
         });
+}
+
+/**
+ *
+ * @param {RequestInfo | URL} url
+ * @param {{ body?: any } & RequestInit?} options
+ */
+async function apiRequest(url, options = null)
+{
+    const reply = await apiRequestWithHeaders(url, options);
+    return reply?.body;
 }
 
 function Handle(name, instance) {
@@ -338,6 +353,74 @@ class MastodonApiClient extends ApiClient {
         super(instance);
         this._emoji_reacts = emoji_reacts;
         this._flavor = flavor;
+        // Server-side hard limits on return items; varies per endpoint
+        this._API_LIMIT = 80;
+        this._API_LIMIT_SMALL = 40;
+    }
+
+    /**
+     * @param {Headers} headers
+     * @return {URL?} request URL for next page or null
+     */
+    static getNextPage(headers)
+    {
+        /*
+         * https://docs.joinmastodon.org/api/guidelines/#pagination
+         *
+         * Not explicitly documented in the page linked above, but
+         *  - the next page will automatically use the same limit as the original request
+         *    (tested with Mastodon 4.2.1 and Akkoma 3.10.3)
+         *  - the last page can sometimes still contain a next/prev link, but this "next" page
+         *    will then be empty and not contain any Link header (e.g. Akkoma 3.10.3 with statuses)
+         *    To save on API requests, we can check if less than expected were returned
+         */
+        const links = headers.get("Link");
+        if (links === null)
+            return null;
+
+        for (const link of links.split(",")) {
+            const p = link.split(";").map(s => s.trim());
+            if (p.length == 2 && p[1] === 'rel="next"') {
+                // Remove enclosing angle brackets <...>
+                return p[0].substring(1, p[0].length - 1);
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param {RequestInfo | URL} url
+     * @param {number} targetCount how many entries to gather
+     * @param {number?} requestLimit how many entries a single request is expected to return.
+     *                  If set will be used to detect end of data early, without needing to request an empty page.
+     * @param {boolean} exactTarget if true, discard entries exceeding targetCount
+     */
+    static async apiRequestPaged(url, targetCount, requestLimit = null, exactTarget = false)
+    {
+        console.log(`Fetching repeatedly (${targetCount} a ${requestLimit}) :: ${url}`);
+
+        let nextUrl = url;
+        let remaining = targetCount;
+        let data = [];
+        while (remaining > 0 && nextUrl !== null) {
+            const reply = await apiRequestWithHeaders(nextUrl);
+            if (reply?.body === null) {
+                console.error(`Error while gathering entries. Returning incomplete data!`);
+                break;
+            }
+            nextUrl = MastodonApiClient.getNextPage(reply.headers);
+            let newdata = reply.body;
+            if (exactTarget && newdata.length > remaining)
+                newdata = newdata.slice(0, remaining);
+
+            data.push(newdata);
+            remaining -= newdata.length;
+            if (newdata.length < requestLimit)
+                break;
+        }
+
+        return data.length === 0 ? null : data.flat();
     }
 
     async getUserIdFromHandle(handle) {
@@ -363,8 +446,8 @@ class MastodonApiClient extends ApiClient {
     }
 
     async getNotes(user) {
-        const url = `https://${this._instance}/api/v1/accounts/${user.id}/statuses?exclude_replies=true&exclude_reblogs=true&limit=40`;
-        const response = await apiRequest(url, null);
+        const url = `https://${this._instance}/api/v1/accounts/${user.id}/statuses?exclude_replies=true&exclude_reblogs=true&limit=${this._API_LIMIT_SMALL}`;
+        const response = await MastodonApiClient.apiRequestPaged(url, this._CNT_NOTES, this._API_LIMIT_SMALL, true);
 
         if (!response) {
             return null;
@@ -388,8 +471,8 @@ class MastodonApiClient extends ApiClient {
     }
 
     async getRenotes(note) {
-        const url = `https://${this._instance}/api/v1/statuses/${note.id}/reblogged_by`;
-        const response = await apiRequest(url);
+        const url = `https://${this._instance}/api/v1/statuses/${note.id}/reblogged_by?limit=${this._API_LIMIT}`;
+        const response = await MastodonApiClient.apiRequestPaged(url, this._CNT_RENOTES, this._API_LIMIT);
 
         if (!response) {
             return null;
@@ -405,6 +488,7 @@ class MastodonApiClient extends ApiClient {
     }
 
     async getReplies(noteIn) {
+        // The context endpoint has no limit parameter or pages
         const url = `https://${this._instance}/api/v1/statuses/${noteIn.id}/context`;
         const response = await apiRequest(url);
 
@@ -441,8 +525,8 @@ class MastodonApiClient extends ApiClient {
     }
 
     async getFavs(note) {
-        const url = `https://${this._instance}/api/v1/statuses/${note.id}/favourited_by`;
-        const response = await apiRequest(url);
+        const url = `https://${this._instance}/api/v1/statuses/${note.id}/favourited_by?limit=${this._API_LIMIT}`;
+        const response = await MastodonApiClient.apiRequestPaged(url, this._CNT_FAVS, this._API_LIMIT);
 
         if (!response) {
             return null;
@@ -483,8 +567,9 @@ class PleromaApiClient extends MastodonApiClient {
         if (!this._emoji_reacts)
             return [];
 
-        const url = `https://${this._instance}/api/v1/pleroma/statuses/${note.id}/reactions`;
-        const response = await apiRequest(url) ?? [];
+        // The documentation doesn't specify the hardcoded limit, so just use the lowest known one
+        const url = `https://${this._instance}/api/v1/pleroma/statuses/${note.id}/reactions?limit=${this._API_LIMIT_SMALL}`;
+        const response = await MastodonApiClient.apiRequestPaged(url, this._CNT_FAVS, this._API_LIMIT_SMALL) ?? [];
 
         /**
          * @type {Map<string, FediUser>}
@@ -532,8 +617,9 @@ class FedibirdApiClient extends MastodonApiClient {
          */
         let users = new Map();
 
-        const url = `https://${this._instance}/api/v1/statuses/${note.id}/emoji_reactioned_by`;
-        const response = await apiRequest(url) ?? [];
+        // Could not locate documentation for Fedibird API, so just use lowest known limit
+        const url = `https://${this._instance}/api/v1/statuses/${note.id}/emoji_reactioned_by?limit=${this._API_LIMIT_SMALL}`;
+        const response = await MastodonApiClient.apiRequestPaged(url, this._CNT_FAVS, this._API_LIMIT_SMALL) ?? [];
 
         for (const reaction of response) {
             let account = reaction["account"];
