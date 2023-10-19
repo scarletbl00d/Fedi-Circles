@@ -152,6 +152,11 @@ class ApiClient {
      */
     constructor(instance) {
         this._instance = instance;
+        // How many objects to max consider per type
+        this._CNT_NOTES = 70;
+        this._CNT_RENOTES = 50;
+        this._CNT_REPLIES = 100;
+        this._CNT_FAVS = 100;
     }
 
     /**
@@ -626,7 +631,7 @@ class MisskeyApiClient extends ApiClient {
             },
             body: {
                 userId: user.id,
-                limit: 70,
+                limit: this._CNT_NOTES,
                 reply: false,
                 renote: false,
             }
@@ -656,7 +661,7 @@ class MisskeyApiClient extends ApiClient {
             },
             body: {
                 noteId: note.id,
-                limit: 50,
+                limit: this._CNT_RENOTES,
             }
         });
 
@@ -682,7 +687,7 @@ class MisskeyApiClient extends ApiClient {
             },
             body: {
                 noteId: note.id,
-                limit: 100,
+                limit: this._CNT_REPLIES,
             }
         });
 
@@ -720,7 +725,7 @@ class MisskeyApiClient extends ApiClient {
             },
             body: {
                 noteId: note.id,
-                limit: 100,
+                limit: this._CNT_FAVS,
             }
         });
 
