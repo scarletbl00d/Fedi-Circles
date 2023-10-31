@@ -80,11 +80,36 @@ Handle.prototype.webFinger = async function () {
         return this;
     }
 
-    let url = `https://${this.instance}/.well-known/webfinger?` + new URLSearchParams({
+    const defaultWebfingerUrl = `https://${this.instance}/.well-known/webfinger?` + new URLSearchParams({
         resource: `acct:${this}`
     });
 
-    let webFinger = await apiRequest(url);
+    let webFinger = await apiRequest(defaultWebfingerUrl);
+
+    if (!webFinger) {
+        const contentTypeXrd = "application/xrd+xml";
+        const hostMetaUrl = `https://${this.instance}/.well-known/host-meta`;
+
+        console.log(`Fetching :: ${hostMetaUrl}`);
+        let hostMeta = await fetch(hostMetaUrl, {
+            headers: {
+                "Accept": contentTypeXrd
+            },
+            redirect: "follow"
+        }).then(async res => {
+            return new DOMParser()
+                .parseFromString(await res.text(), "text/xml");
+        }).catch(e => {
+            console.error(`Error fetching ${hostMetaUrl}: ${e}`);
+            return null;
+        });
+
+        const webfingerTemplate = hostMeta.querySelector("Link[rel='lrdd']")
+            ?.getAttribute("template");
+
+        if (webfingerTemplate)
+            webFinger = await apiRequest(webfingerTemplate.replace("{uri}", `acct:${this}`));
+    }
 
     if (!webFinger)
         return this;
