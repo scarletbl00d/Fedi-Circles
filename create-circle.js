@@ -396,7 +396,7 @@ class MastodonApiClient extends ApiClient {
     /**
      * @param {RequestInfo | URL} url
      * @param {number} targetCount how many entries to gather
-     * @param {number?} requestLimit how many entries a single request is expected to return.
+     * @param {number | null} requestLimit how many entries a single request is expected to return.
      *                  If set will be used to detect end of data early, without needing to request an empty page.
      * @param {boolean} exactTarget if true, discard entries exceeding targetCount
      */
@@ -420,7 +420,7 @@ class MastodonApiClient extends ApiClient {
 
             data.push(newdata);
             remaining -= newdata.length;
-            if (newdata.length < requestLimit)
+            if (requestLimit !== null && newdata.length < requestLimit)
                 break;
         }
 
@@ -621,7 +621,7 @@ class FedibirdApiClient extends MastodonApiClient {
          */
         let users = new Map();
 
-        // Could not locate documentation for Fedibird API, so just use lowest known limit
+        // Could not locate documentation for Fedibird API, so just use the lowest known limit
         const url = `https://${this._instance}/api/v1/statuses/${note.id}/emoji_reactioned_by?limit=${this._API_LIMIT_SMALL}`;
         const response = await MastodonApiClient.apiRequestPaged(url, this._CNT_FAVS, this._API_LIMIT_SMALL) ?? [];
 
