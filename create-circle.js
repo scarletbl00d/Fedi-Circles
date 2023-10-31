@@ -360,7 +360,7 @@ class MastodonApiClient extends ApiClient {
 
     /**
      * @param {Headers} headers
-     * @return {URL?} request URL for next page or null
+     * @return {URL | null} request URL for next page or null
      */
     static getNextPage(headers)
     {
@@ -379,10 +379,14 @@ class MastodonApiClient extends ApiClient {
             return null;
 
         for (const link of links.split(",")) {
-            const p = link.split(";").map(s => s.trim());
-            if (p.length == 2 && p[1] === 'rel="next"') {
-                // Remove enclosing angle brackets <...>
-                return p[0].substring(1, p[0].length - 1);
+            const [url_raw, rel] = link.split(";").map(s => s.trim());
+            if (url_raw && rel === 'rel="next"') {
+                try {
+                    // Remove enclosing angle brackets <...>
+                    return new URL(url_raw.substring(1, url_raw.length - 1));
+                } catch (e) {
+                    console.warn("Invalid URL: ", e);
+                }
             }
         }
 
