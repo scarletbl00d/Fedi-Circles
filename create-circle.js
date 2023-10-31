@@ -3,8 +3,7 @@
  * @param {RequestInfo | URL} url
  * @param {{ body?: any } & RequestInit?} options
  */
-async function apiRequestWithHeaders(url, options = null)
-{
+async function apiRequestWithHeaders(url, options = null) {
     console.log(`Fetching :: ${url}`);
 
     if (options && options.body) {
@@ -35,8 +34,7 @@ async function apiRequestWithHeaders(url, options = null)
  * @param {RequestInfo | URL} url
  * @param {{ body?: any } & RequestInit?} options
  */
-async function apiRequest(url, options = null)
-{
+async function apiRequest(url, options = null) {
     const reply = await apiRequestWithHeaders(url, options);
     return reply?.body;
 }
@@ -362,8 +360,7 @@ class MastodonApiClient extends ApiClient {
      * @param {Headers} headers
      * @return {URL | null} request URL for next page or null
      */
-    static getNextPage(headers)
-    {
+    static getNextPage(headers) {
         /*
          * https://docs.joinmastodon.org/api/guidelines/#pagination
          *
@@ -400,8 +397,7 @@ class MastodonApiClient extends ApiClient {
      *                  If set will be used to detect end of data early, without needing to request an empty page.
      * @param {boolean} exactTarget if true, discard entries exceeding targetCount
      */
-    static async apiRequestPaged(url, targetCount, requestLimit = null, exactTarget = false)
-    {
+    static async apiRequestPaged(url, targetCount, requestLimit = null, exactTarget = false) {
         console.log(`Fetching repeatedly (${targetCount} a ${requestLimit}) :: ${url}`);
 
         let nextUrl = url;
