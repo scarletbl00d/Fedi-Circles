@@ -18,11 +18,7 @@ async function apiRequestWithHeaders(url, options = null) {
 
             throw new Error(`Error fetching ${url}: ${response.status} ${response.statusText}`);
         })
-        .then(response => new Promise((resolve, reject) => {
-            response.json()
-            .then(rbody => resolve({headers: response.headers, body: rbody}))
-            .catch(error => reject(error))
-        }))
+        .then(async response => ({ headers: response.headers, body: await response.json() }))
         .catch(error => {
             console.error(`Error fetching ${url}: ${error}`);
             return null;
