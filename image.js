@@ -74,7 +74,7 @@ function render(users, selfUser) {
 	ctx.fillStyle = "silver";
 	ctx.fillText("Be gay do crime uwu", 10, 15);
 	ctx.fillStyle = "black";
-	ctx.fillText("https://data.natty.sh/fedi-circles", width - 170, height - 15, 160);
+	ctx.fillText("https://fedi-circles.yourwalls.today/", width - 170, height - 15, 160);
 }
 
 // Load the image from the URL and draw it in a circle
