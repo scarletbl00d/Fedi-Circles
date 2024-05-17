@@ -741,8 +741,10 @@ class MisskeyApiClient extends ApiClient {
             body: {
                 userId: user.id,
                 limit: this._CNT_NOTES,
-                reply: false,
-                renote: false,
+                withReplies: false,
+                withRenotes: false,
+                includeReplies: false,
+                includeMyRenotes: false
             }
         });
 
