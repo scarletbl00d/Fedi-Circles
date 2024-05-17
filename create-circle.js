@@ -199,10 +199,10 @@ class ApiClient {
     constructor(instance) {
         this._instance = instance;
         // How many objects to max consider per type
-        this._CNT_NOTES = 150;
-        this._CNT_RENOTES = 100;
-        this._CNT_REPLIES = 200;
-        this._CNT_FAVS = 200;
+        this._CNT_NOTES = 300;
+        this._CNT_RENOTES = 200;
+        this._CNT_REPLIES =400;
+        this._CNT_FAVS = 400;
     }
 
     /**
