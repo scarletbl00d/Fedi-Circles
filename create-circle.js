@@ -262,7 +262,9 @@ class ApiClient {
             software.name.includes("calckey") ||
             software.name.includes("foundkey") ||
             software.name.includes("magnetar") ||
-            software.name.includes("firefish")) {
+            software.name.includes("firefish") ||
+            software.name.includes("sharkey") ||
+            software.name.includes("cutiekey")) {
             const client = new MisskeyApiClient(instance);
             instanceTypeCache.set(instance, client);
             return client;
