@@ -18,10 +18,13 @@ async function apiRequestWithHeaders(url, options = null) {
 
             throw new Error(`Error fetching ${url}: ${response.status} ${response.statusText}`);
         })
-        .then(async response => ({ headers: response.headers, body: await response.json() }))
+        .then(async response => ({ response: { headers: response.headers, body: await response.json(), error: undefined }}))
         .catch(error => {
-            console.error(`Error fetching ${url}: ${error}`);
-            return null;
+            console.error(`Error fetching ${url}:`, error);
+            return {
+                response: undefined,
+                error: `Error fetching ${url}: ${error}`
+            };
         });
 }
 
@@ -32,7 +35,16 @@ async function apiRequestWithHeaders(url, options = null) {
  */
 async function apiRequest(url, options = null) {
     const reply = await apiRequestWithHeaders(url, options);
-    return reply?.body;
+
+    if (!reply.response) {
+        return {
+            error: reply.error
+        };
+    }
+
+    return {
+        response: reply.response.body
+    };
 }
 
 function Handle(name, instance) {
@@ -80,7 +92,7 @@ Handle.prototype.webFinger = async function () {
         resource: `acct:${this}`
     });
 
-    let webFinger = await apiRequest(defaultWebfingerUrl);
+    let { response: webFinger } = await apiRequest(defaultWebfingerUrl);
 
     if (!webFinger) {
         const contentTypeXrd = "application/xrd+xml";
@@ -104,7 +116,7 @@ Handle.prototype.webFinger = async function () {
             ?.getAttribute("template");
 
         if (webfingerTemplate)
-            webFinger = await apiRequest(webfingerTemplate.replace("{uri}", `acct:${this}`));
+            webFinger = (await apiRequest(webfingerTemplate.replace("{uri}", `acct:${this}`)))?.response;
     }
 
     if (!webFinger)
@@ -204,7 +216,7 @@ class ApiClient {
         }
 
         let url = `https://${instance}/.well-known/nodeinfo`;
-        let nodeInfo = await apiRequest(url);
+        let { response: nodeInfo } = await apiRequest(url);
 
         if (!nodeInfo || !Array.isArray(nodeInfo.links)) {
             const client = new MastodonApiClient(instance, true);
@@ -226,11 +238,11 @@ class ApiClient {
             return client;
         }
 
-        let apiResponse = await apiRequest(apiLink.href);
+        let { response: apiResponse } = await apiRequest(apiLink.href);
 
         if (!apiResponse) {
             // Guess from API endpoints
-            const misskeyMeta = await apiRequest(`https://${instance}/api/meta`, {
+            const { response: misskeyMeta } = await apiRequest(`https://${instance}/api/meta`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json"
@@ -270,7 +282,7 @@ class ApiClient {
             return client;
         }
 
-        let features = apiResponse?.metadata?.features;
+        let features = apiResponse?.metadata?.["features"];
         if (Array.isArray(features) && features.includes("pleroma_api")) {
             const has_emoji_reacts = features.includes("pleroma_emoji_reactions");
             const client = new PleromaApiClient(instance, has_emoji_reacts);
@@ -286,14 +298,14 @@ class ApiClient {
     /**
      * @param {Handle} handle
      *
-     * @returns {Promise<FediUser>}
+     * @returns {Promise<{ response: FediUser, error: undefined } | { response: undefined, error: string }>}
      */
     async getUserIdFromHandle(handle){ throw new Error("Not implemented"); }
 
     /**
      * @param {FediUser} user
      *
-     * @returns {Promise<Note[]>}
+     * @returns {Promise<{ response: Note[], error: undefined } | { response: undefined, error: string }>}
      */
     async getNotes(user){ throw new Error("Not implemented"); }
 
@@ -427,9 +439,13 @@ class MastodonApiClient extends ApiClient {
         let remaining = targetCount;
         let data = [];
         while (remaining > 0 && nextUrl !== null) {
-            const reply = await apiRequestWithHeaders(nextUrl);
-            if (reply?.body === null) {
+            const { response: reply, error } = await apiRequestWithHeaders(nextUrl);
+            if (reply?.body == null || error) {
                 console.error(`Error while gathering entries. Returning incomplete data!`);
+                if (data.length === 0) {
+                    return { error };
+                }
+
                 break;
             }
             nextUrl = MastodonApiClient.getNextPage(reply.headers);
@@ -443,37 +459,45 @@ class MastodonApiClient extends ApiClient {
                 break;
         }
 
-        return data.length === 0 ? null : data.flat();
+        return { response: data.length === 0 ? null : data.flat() };
     }
 
     async getUserIdFromHandle(handle) {
         const url = `https://${this._instance}/api/v1/accounts/lookup?acct=${handle.baseHandle}`;
-        let response = await apiRequest(url, null);
+        let { response } = await apiRequest(url, null);
 
         if (!response) {
             const url = `https://${this._instance}/api/v1/accounts/lookup?acct=${handle}`;
-            response = await apiRequest(url, null);
+
+            const { response: res, error } = (await apiRequest(url, null));
+            if (error) {
+                return { error };
+            }
+
+            response = res;
         }
 
-        if (!response) {
-            return null;
+        if (typeof response !== "object") {
+            return { error: `Could not parse user lookup response from server, invalid object: ${response}` };
         }
 
         return {
-            id: response.id,
-            avatar: response.avatar,
-            bot: response.bot,
-            name: response["display_name"],
-            handle: handle,
+            response: {
+                id: response.id,
+                    avatar: response.avatar,
+                bot: response.bot,
+                name: response["display_name"],
+                handle: handle,
+            }
         };
     }
 
     async getNotes(user) {
         const url = `https://${this._instance}/api/v1/accounts/${user.id}/statuses?exclude_replies=true&exclude_reblogs=true&limit=${this._API_LIMIT_SMALL}`;
-        const response = await MastodonApiClient.apiRequestPaged(url, this._CNT_NOTES, this._API_LIMIT_SMALL, true);
+        const { response, error} = await MastodonApiClient.apiRequestPaged(url, this._CNT_NOTES, this._API_LIMIT_SMALL, true);
 
-        if (!response) {
-            return null;
+        if (error) {
+            return { error };
         }
 
         if (response?.some(note => note?.["pleroma"]?.["emoji_reactions"]?.length)) {
@@ -482,15 +506,17 @@ class MastodonApiClient extends ApiClient {
             this._flavor = MastodonFlavor.FEDIBIRD;
         }
 
-        return response.map(note => ({
-            id: note.id,
-            replies: note["replies_count"] || 0,
-            renotes: note["reblogs_count"] || 0,
-            favorites: note["favourites_count"],
-            extra_reacts: note?.["emoji_reactions"]?.length > 0 || note?.["pleroma"]?.["emoji_reactions"]?.length > 0,
-            instance: this._instance,
-            author: user
-        }));
+        return {
+            response: response.map(note => ({
+                id: note.id,
+                replies: note["replies_count"] || 0,
+                renotes: note["reblogs_count"] || 0,
+                favorites: note["favourites_count"],
+                extra_reacts: note?.["emoji_reactions"]?.length > 0 || note?.["pleroma"]?.["emoji_reactions"]?.length > 0,
+                instance: this._instance,
+                author: user
+            }))
+        };
     }
 
     async getRenotes(note) {
@@ -513,7 +539,7 @@ class MastodonApiClient extends ApiClient {
     async getReplies(noteIn) {
         // The context endpoint has no limit parameter or pages
         const url = `https://${this._instance}/api/v1/statuses/${noteIn.id}/context`;
-        const response = await apiRequest(url);
+        const response = (await apiRequest(url)).response;
 
         if (!response) {
             return null;
@@ -549,7 +575,7 @@ class MastodonApiClient extends ApiClient {
 
     async getFavs(note) {
         const url = `https://${this._instance}/api/v1/statuses/${note.id}/favourited_by?limit=${this._API_LIMIT}`;
-        const response = await MastodonApiClient.apiRequestPaged(url, this._CNT_FAVS, this._API_LIMIT);
+        const response = (await MastodonApiClient.apiRequestPaged(url, this._CNT_FAVS, this._API_LIMIT)).response;
 
         if (!response) {
             return null;
@@ -592,7 +618,7 @@ class PleromaApiClient extends MastodonApiClient {
 
         // The documentation doesn't specify the hardcoded limit, so just use the lowest known one
         const url = `https://${this._instance}/api/v1/pleroma/statuses/${note.id}/reactions?limit=${this._API_LIMIT_SMALL}`;
-        const response = await MastodonApiClient.apiRequestPaged(url, this._CNT_FAVS, this._API_LIMIT_SMALL) ?? [];
+        const response = (await MastodonApiClient.apiRequestPaged(url, this._CNT_FAVS, this._API_LIMIT_SMALL)).response ?? [];
 
         /**
          * @type {Map<string, FediUser>}
@@ -642,7 +668,7 @@ class FedibirdApiClient extends MastodonApiClient {
 
         // Could not locate documentation for Fedibird API, so just use the lowest known limit
         const url = `https://${this._instance}/api/v1/statuses/${note.id}/emoji_reactioned_by?limit=${this._API_LIMIT_SMALL}`;
-        const response = await MastodonApiClient.apiRequestPaged(url, this._CNT_FAVS, this._API_LIMIT_SMALL) ?? [];
+        const response = (await MastodonApiClient.apiRequestPaged(url, this._CNT_FAVS, this._API_LIMIT_SMALL)).response ?? [];
 
         for (const reaction of response) {
             let account = reaction["account"];
@@ -682,7 +708,7 @@ class MisskeyApiClient extends ApiClient {
 
     async getUserIdFromHandle(handle) {
         const lookupUrl = `https://${this._instance}/api/users/search-by-username-and-host`;
-        const lookup = await apiRequest(lookupUrl, {
+        const lookup = (await apiRequest(lookupUrl, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json"
@@ -691,7 +717,7 @@ class MisskeyApiClient extends ApiClient {
                 username: handle.name,
                 host: null
             }
-        });
+        })).response;
 
         let id = null;
 
@@ -707,7 +733,7 @@ class MisskeyApiClient extends ApiClient {
         }
 
         const url = `https://${this._instance}/api/users/show`;
-        const response = await apiRequest(url, {
+        const { response, error } = await apiRequest(url, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json"
@@ -718,22 +744,24 @@ class MisskeyApiClient extends ApiClient {
             }
         });
 
-        if (!response) {
-            return null;
+        if (error) {
+            return { error };
         }
 
         return {
-            id: response.id,
-            avatar: response["avatarUrl"],
-            bot: response["isBot"],
-            name: response["name"],
-            handle: handle,
+            response: {
+                id: response.id,
+                avatar: response["avatarUrl"],
+                bot: response["isBot"],
+                name: response["name"],
+                handle: handle,
+            }
         };
     }
 
     async getNotes(user) {
         const url = `https://${this._instance}/api/users/notes`;
-        const response = await apiRequest(url, {
+        const { response, error } = await apiRequest(url, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json"
@@ -748,24 +776,26 @@ class MisskeyApiClient extends ApiClient {
             }
         });
 
-        if (!response) {
-            return null;
+        if (error) {
+            return { error };
         }
 
-        return response.map(note => ({
-            id: note.id,
-            replies: note["repliesCount"],
-            renotes: note["renoteCount"],
-            favorites: Object.values(note["reactions"]).reduce((a, b) => a + b, 0),
-            extra_reacts: false,
-            instance: this._instance,
-            author: user
-        }));
+        return {
+            response: response.map(note => ({
+                id: note.id,
+                replies: note["repliesCount"],
+                renotes: note["renoteCount"],
+                favorites: Object.values(note["reactions"]).reduce((a, b) => a + b, 0),
+                extra_reacts: false,
+                instance: this._instance,
+                author: user
+            }))
+        };
     }
 
     async getRenotes(note) {
         const url = `https://${this._instance}/api/notes/renotes`;
-        const response = await apiRequest(url, {
+        const response = (await apiRequest(url, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json"
@@ -774,7 +804,7 @@ class MisskeyApiClient extends ApiClient {
                 noteId: note.id,
                 limit: this._CNT_RENOTES,
             }
-        });
+        })).response;
 
         if (!response) {
             return null;
@@ -791,7 +821,7 @@ class MisskeyApiClient extends ApiClient {
 
     async getReplies(note) {
         const url = `https://${this._instance}/api/notes/replies`;
-        const response = await apiRequest(url, {
+        const response = (await apiRequest(url, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json"
@@ -800,7 +830,7 @@ class MisskeyApiClient extends ApiClient {
                 noteId: note.id,
                 limit: this._CNT_REPLIES,
             }
-        });
+        })).response;
 
         if (!response) {
             return null;
@@ -829,7 +859,7 @@ class MisskeyApiClient extends ApiClient {
 
     async getFavs(note) {
         const url = `https://${this._instance}/api/notes/reactions`;
-        const response = await apiRequest(url, {
+        const response = (await apiRequest(url, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json"
@@ -838,7 +868,7 @@ class MisskeyApiClient extends ApiClient {
                 noteId: note.id,
                 limit: this._CNT_FAVS,
             }
-        });
+        })).response;
 
         if (!response) {
             return null;
@@ -921,10 +951,10 @@ async function circleMain() {
 
     progress.innerText = "Fetching your user...";
 
-    const user = await client.getUserIdFromHandle(selfUser);
+    const { response: user, error: userError } = await client.getUserIdFromHandle(selfUser);
 
-    if (!user) {
-        alert("Something went horribly wrong, couldn't fetch your user.");
+    if (userError) {
+        alert(`Something went horribly wrong, couldn't fetch your user:\n\n${userError}`);
         fediHandle.disabled = false;
         for (const radio of backend) {
             radio.disabled = false;
@@ -937,10 +967,10 @@ async function circleMain() {
 
     progress.innerText = "Fetching your latest posts...";
 
-    const notes = await client.getNotes(user);
+    const { response: notes, error: noteError } = await client.getNotes(user);
 
-    if (!notes) {
-        alert("Something went horribly wrong, couldn't fetch your notes.");
+    if (noteError) {
+        alert(`Something went horribly wrong, couldn't fetch your notes:\n\n${noteError}`);
         return;
     }
 
